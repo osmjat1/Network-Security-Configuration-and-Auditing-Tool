@@ -1,0 +1,443 @@
+
+import json
+import subprocess
+import sys
+from pathlib import Path
+from datetime import datetime
+
+import pandas as pd
+import streamlit as st
+
+ROOT = Path(__file__).resolve().parent.parent
+REPORT = ROOT / "reports" / "audit_report.json"
+CONFIG = ROOT / "samples" / "router_running_config.txt"
+AUDITOR = ROOT / "src" / "auditor.py"
+
+st.set_page_config(
+    page_title="NetSecureOps | SOC",
+    page_icon="🛡️",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# ---------- Design system ----------
+st.markdown("""
+<style>
+.stApp {
+    background: #0B1120;
+    color: #E5E7EB;
+}
+[data-testid="stHeader"] {
+    background: rgba(11,17,32,0.92);
+}
+[data-testid="stSidebar"] {
+    background: #111827;
+    border-right: 1px solid #263247;
+}
+.block-container {
+    padding-top: 1.5rem;
+    padding-bottom: 2rem;
+    max-width: 1600px;
+}
+h1, h2, h3 {
+    color: #F8FAFC !important;
+}
+p, label, .stMarkdown {
+    color: #CBD5E1;
+}
+.ns-card {
+    background: linear-gradient(145deg,#172033,#111827);
+    border: 1px solid #29364B;
+    border-radius: 14px;
+    padding: 18px 20px;
+    min-height: 118px;
+}
+.ns-label {
+    color: #94A3B8;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+.ns-value {
+    font-size: 30px;
+    font-weight: 750;
+    margin-top: 8px;
+    color: #F8FAFC;
+}
+.ns-sub {
+    font-size: 12px;
+    margin-top: 5px;
+    color: #94A3B8;
+}
+.ns-section {
+    background: #111827;
+    border: 1px solid #263247;
+    border-radius: 14px;
+    padding: 18px;
+    margin-bottom: 14px;
+}
+.ns-status {
+    display: inline-block;
+    padding: 5px 10px;
+    border-radius: 7px;
+    font-size: 12px;
+    font-weight: 750;
+}
+div.stButton > button {
+    border-radius: 8px;
+    border: 1px solid #334155;
+    min-height: 42px;
+    font-weight: 650;
+}
+div.stButton > button[kind="primary"] {
+    background: #0EA5E9;
+    border-color: #0284C7;
+    color: white;
+}
+[data-testid="stMetric"] {
+    background: #111827;
+    border: 1px solid #263247;
+    padding: 14px;
+    border-radius: 12px;
+}
+[data-testid="stDataFrame"] {
+    border: 1px solid #263247;
+    border-radius: 10px;
+}
+hr {
+    border-color: #263247;
+}
+footer {visibility: hidden;}
+</style>
+""", unsafe_allow_html=True)
+
+SEVERITY_COLORS = {
+    "Critical": "#EF4444",
+    "High": "#F97316",
+    "Medium": "#EAB308",
+    "Low": "#38BDF8",
+    "Info": "#A78BFA",
+    "Informational": "#A78BFA",
+    "Unknown": "#94A3B8",
+}
+
+def load_report():
+    if not REPORT.exists():
+        return None
+    try:
+        return json.loads(REPORT.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+
+def run_audit():
+    if not CONFIG.exists():
+        return False, "Sample configuration file was not found."
+    if not AUDITOR.exists():
+        return False, "Auditor script was not found."
+
+    try:
+        result = subprocess.run(
+            [sys.executable, str(AUDITOR), str(CONFIG)],
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, str(exc)
+
+    if result.returncode != 0:
+        return False, result.stderr or result.stdout or "Audit failed."
+
+    if not REPORT.exists():
+        return False, "Auditor finished but did not create the expected JSON report."
+
+    return True, "Audit completed successfully."
+
+def card(label, value, subtitle="", color="#F8FAFC"):
+    st.markdown(
+        f"""
+        <div class="ns-card">
+          <div class="ns-label">{label}</div>
+          <div class="ns-value" style="color:{color}">{value}</div>
+          <div class="ns-sub">{subtitle}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+def risk_color(score):
+    if score >= 70:
+        return "#EF4444", "CRITICAL"
+    if score >= 40:
+        return "#F97316", "HIGH"
+    if score >= 20:
+        return "#EAB308", "MODERATE"
+    return "#22C55E", "LOW"
+
+# ---------- Sidebar ----------
+with st.sidebar:
+    st.markdown("## 🛡️ NetSecureOps")
+    st.caption("NETWORK SECURITY OPERATIONS")
+    st.markdown("---")
+
+    page = st.radio(
+        "WORKSPACE",
+        ["Overview", "Security Findings", "Reports & Evidence", "About"],
+        label_visibility="visible",
+    )
+
+    st.markdown("---")
+    st.markdown("### Lab controls")
+    st.caption("Current mode: Offline sample audit")
+    st.code("samples/router_running_config.txt", language=None)
+
+    if st.button("▶ Run Security Audit", type="primary",
+                 use_container_width=True):
+        with st.spinner("Analysing configuration..."):
+            ok, message = run_audit()
+        if ok:
+            st.success(message)
+            st.rerun()
+        else:
+            st.error(message)
+
+    st.markdown("---")
+    st.caption("NetSecureOps • Development build")
+    st.caption("No live device telemetry is collected.")
+
+# ---------- Load audit data ----------
+report = load_report()
+
+st.markdown("# 🛡️ NetSecureOps")
+st.caption("NETWORK SECURITY CONFIGURATION AUDITING PLATFORM")
+
+if report is None:
+    st.warning("No valid audit report is available. Run an audit from the sidebar.")
+    st.stop()
+
+findings = report.get("findings", [])
+df = pd.DataFrame(findings)
+
+expected_columns = [
+    "rule_id", "severity", "title", "description",
+    "evidence", "recommendation",
+]
+for col in expected_columns:
+    if col not in df.columns:
+        df[col] = ""
+
+df["severity"] = df["severity"].fillna("Unknown").astype(str).str.title()
+df["rule_id"] = df["rule_id"].fillna("N/A").astype(str)
+
+score = report.get("risk_score", 0)
+try:
+    score = max(0, min(100, int(score)))
+except (TypeError, ValueError):
+    score = 0
+
+risk_hex, risk_name = risk_color(score)
+total = len(df)
+counts = df["severity"].value_counts()
+critical = int(counts.get("Critical", 0))
+high = int(counts.get("High", 0))
+medium = int(counts.get("Medium", 0))
+low = int(counts.get("Low", 0))
+
+# ---------- Overview ----------
+if page == "Overview":
+    st.markdown("### Security posture")
+    st.caption(
+        f"Report time: {report.get('audit_time_utc', 'Not recorded')} UTC"
+    )
+
+    a, b, c, d = st.columns(4)
+    with a:
+        card("Risk score", f"{score}/100", "Configured display scale", risk_hex)
+    with b:
+        card("Total findings", total, "From the current audit", "#38BDF8")
+    with c:
+        card("Critical + High", critical + high,
+             "Prioritise remediation", "#F97316")
+    with d:
+        card("Configuration", "LOADED", "Offline sample file", "#22C55E")
+
+    st.markdown("")
+    st.markdown(
+        f'<span class="ns-status" style="background:{risk_hex}22;'
+        f'color:{risk_hex};border:1px solid {risk_hex}66">'
+        f'RISK STATUS: {risk_name}</span>',
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("### Findings analytics")
+    left, right = st.columns([1.15, 1])
+
+    with left:
+        st.markdown('<div class="ns-section">', unsafe_allow_html=True)
+        st.markdown("#### Findings by severity")
+        order = ["Critical", "High", "Medium", "Low", "Info", "Informational", "Unknown"]
+        chart_data = counts.reindex(order, fill_value=0)
+        chart_data = chart_data[chart_data > 0]
+        if not chart_data.empty:
+            st.bar_chart(chart_data, color="#38BDF8")
+        else:
+            st.success("No security findings in this report.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with right:
+        st.markdown('<div class="ns-section">', unsafe_allow_html=True)
+        st.markdown("#### Severity breakdown")
+        if total:
+            for label in order:
+                n = int(counts.get(label, 0))
+                if n == 0:
+                    continue
+                pct = n / total * 100
+                color = SEVERITY_COLORS.get(label, "#94A3B8")
+                st.markdown(
+                    f'<div style="display:flex;justify-content:space-between;'
+                    f'margin-top:12px"><span>{label}</span>'
+                    f'<b style="color:{color}">{n} · {pct:.0f}%</b></div>'
+                    f'<div style="height:8px;background:#263247;border-radius:8px;'
+                    f'margin-top:5px"><div style="width:{pct}%;height:8px;'
+                    f'background:{color};border-radius:8px"></div></div>',
+                    unsafe_allow_html=True,
+                )
+        else:
+            st.success("No findings to break down.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("### Priority findings")
+    priority = df[df["severity"].isin(["Critical", "High", "Medium"])]
+    if priority.empty:
+        st.success("No Critical, High or Medium findings are present.")
+    else:
+        st.dataframe(
+            priority[["rule_id", "severity", "title", "recommendation"]],
+            hide_index=True,
+            use_container_width=True,
+        )
+
+# ---------- Findings ----------
+elif page == "Security Findings":
+    st.markdown("### Security findings explorer")
+    st.caption("Filter findings and inspect the evidence from the current report.")
+
+    f1, f2 = st.columns([1, 2])
+    with f1:
+        selected = st.multiselect(
+            "Severity",
+            options=sorted(df["severity"].unique().tolist()),
+            default=sorted(df["severity"].unique().tolist()),
+        )
+    with f2:
+        query = st.text_input("Search rules, evidence or recommendations")
+
+    filtered = df[df["severity"].isin(selected)].copy()
+    searchable = [
+        "rule_id", "title", "description", "evidence", "recommendation"
+    ]
+    if query:
+        mask = filtered[searchable].fillna("").astype(str).apply(
+            lambda col: col.str.contains(query, case=False, regex=False)
+        ).any(axis=1)
+        filtered = filtered[mask]
+
+    st.caption(f"Showing {len(filtered)} of {total} findings")
+    if filtered.empty:
+        st.info("No findings match the selected filters.")
+    else:
+        st.dataframe(
+            filtered[["rule_id", "severity", "title", "description"]],
+            hide_index=True,
+            use_container_width=True,
+        )
+
+        choices = filtered.index.tolist()
+        selected_idx = st.selectbox(
+            "Inspect a finding",
+            choices,
+            format_func=lambda i: (
+                f"{filtered.loc[i, 'rule_id']} — "
+                f"{filtered.loc[i, 'title'] or 'Untitled finding'}"
+            ),
+        )
+        finding = filtered.loc[selected_idx]
+        color = SEVERITY_COLORS.get(finding["severity"], "#94A3B8")
+
+        st.markdown('<div class="ns-section">', unsafe_allow_html=True)
+        st.markdown(
+            f'<span class="ns-status" style="background:{color}22;'
+            f'color:{color};border:1px solid {color}66">'
+            f'{finding["severity"].upper()}</span>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(f"#### {finding['rule_id']} — {finding['title']}")
+        st.markdown("**Description**")
+        st.write(finding["description"] or "No description recorded.")
+        st.markdown("**Configuration evidence**")
+        st.code(finding["evidence"] or "No evidence recorded.", language=None)
+        st.markdown("**Recommended remediation**")
+        st.write(finding["recommendation"] or "No recommendation recorded.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+# ---------- Reports ----------
+elif page == "Reports & Evidence":
+    st.markdown("### Reports & evidence")
+    st.caption("Export the results produced by the current auditor.")
+
+    st.download_button(
+        "⬇ Download JSON report",
+        data=json.dumps(report, indent=2),
+        file_name="netsecureops_audit_report.json",
+        mime="application/json",
+        use_container_width=True,
+    )
+
+    st.download_button(
+        "⬇ Download findings CSV",
+        data=df.to_csv(index=False),
+        file_name="netsecureops_findings.csv",
+        mime="text/csv",
+        use_container_width=True,
+    )
+
+    st.markdown("### Audit metadata")
+    metadata = {
+        "Tool": report.get("tool", "NetSecureOps"),
+        "Version": report.get("version", "Unknown"),
+        "Audit time (UTC)": report.get("audit_time_utc", "Not recorded"),
+        "Reported checks": report.get("checks_run", "Not recorded"),
+        "Risk score": score,
+        "Risk label from auditor": report.get("risk_label", "Unknown"),
+        "Source": str(CONFIG.relative_to(ROOT)),
+    }
+    st.json(metadata)
+
+    st.markdown("### Current finding records")
+    st.dataframe(df, hide_index=True, use_container_width=True)
+
+# ---------- About ----------
+elif page == "About":
+    st.markdown("### About NetSecureOps")
+    st.write(
+        "NetSecureOps is a development-stage network configuration auditing "
+        "project. It analyses a saved configuration and presents the results "
+        "for review."
+    )
+    st.markdown("#### Current capabilities")
+    st.write("- Offline configuration audit")
+    st.write("- Severity-based findings display")
+    st.write("- JSON and CSV report export")
+    st.write("- Searchable findings and evidence")
+    st.markdown("#### Current limitations")
+    st.write("- This build uses a sample configuration, not live device telemetry.")
+    st.write("- Findings depend on the rules implemented in the auditor.")
+    st.write("- Risk bands are display thresholds, not a validated enterprise risk model.")
+    st.write("- Remediation is advisory; this dashboard does not change device configurations.")
+
+st.markdown("---")
+st.caption("NetSecureOps | Review every recommendation before changing network configurations.")
+

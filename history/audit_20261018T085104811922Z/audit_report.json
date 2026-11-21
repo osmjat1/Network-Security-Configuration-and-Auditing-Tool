@@ -1,0 +1,88 @@
+{
+  "tool": "NetSecureOps",
+  "version": "0.1.0",
+  "audit_time_utc": "2026-10-18T08:51:04.880066+00:00",
+  "checks_run": 10,
+  "risk_score": 37,
+  "risk_label": "High",
+  "findings": [
+    {
+      "rule_id": "AUTH-001",
+      "title": "Enable secret not found",
+      "severity": "High",
+      "evidence": "No 'enable secret' command was found in global configuration.",
+      "recommendation": "Configure a strong enable secret using the approved credential policy."
+    },
+    {
+      "rule_id": "AUTH-002",
+      "title": "Legacy enable password command present",
+      "severity": "Medium",
+      "evidence": "An 'enable password' command exists.",
+      "recommendation": "Prefer 'enable secret'; review and remove legacy credentials safely."
+    },
+    {
+      "rule_id": "AUTH-003",
+      "title": "Password obfuscation service not enabled",
+      "severity": "Low",
+      "evidence": "The 'service password-encryption' command was not found.",
+      "recommendation": "Review credential handling. This command provides weak obfuscation, not strong encryption; use stronger supported secret mechanisms."
+    },
+    {
+      "rule_id": "AUTH-004",
+      "title": "No local username using secret syntax detected",
+      "severity": "Medium",
+      "evidence": "No matching local username/secret line was found.",
+      "recommendation": "Verify the intended AAA design and configure protected local credentials if local authentication is required."
+    },
+    {
+      "rule_id": "MGMT-001",
+      "title": "SSH version 2 not explicitly configured",
+      "severity": "Medium",
+      "evidence": "The exact command 'ip ssh version 2' was not found.",
+      "recommendation": "If supported by the platform, explicitly configure SSH version 2."
+    },
+    {
+      "rule_id": "MGMT-003",
+      "title": "Telnet permitted on VTY lines",
+      "severity": "High",
+      "evidence": "line vty 0 4: transport input permits Telnet.",
+      "recommendation": "Where supported, restrict remote management to SSH and validate access before applying changes."
+    },
+    {
+      "rule_id": "MGMT-005",
+      "title": "VTY idle timeout not detected",
+      "severity": "Low",
+      "evidence": "No exec-timeout command found in line vty 0 4.",
+      "recommendation": "Set an appropriate idle timeout according to your security policy."
+    },
+    {
+      "rule_id": "VLAN-001",
+      "title": "Access port assigned to VLAN 1",
+      "severity": "Medium",
+      "evidence": "GigabitEthernet0/0 is explicitly configured as an access port in VLAN 1.",
+      "recommendation": "Check the network design and move user access ports to an approved VLAN if appropriate."
+    },
+    {
+      "rule_id": "PORT-001",
+      "title": "Access port security not detected",
+      "severity": "Low",
+      "evidence": "GigabitEthernet0/0 is an access port without a port-security command.",
+      "recommendation": "Assess whether port security is supported and appropriate for this port."
+    },
+    {
+      "rule_id": "VLAN-002",
+      "title": "Trunk allowed-VLAN list not explicit",
+      "severity": "Medium",
+      "evidence": "GigabitEthernet0/1 is configured as a trunk without an explicit allowed-VLAN line.",
+      "recommendation": "Define only the VLANs required on this trunk, after verifying the topology."
+    }
+  ],
+  "limitations": [
+    "Offline static analysis only; no device connection was made.",
+    "A missing command is not proof of a vulnerability.",
+    "Rules must be validated against the device model, IOS version and approved policy.",
+    "The score is a project heuristic, not a formal CVSS score."
+  ],
+  "source_config": "samples/router_running_config.txt",
+  "audit_id": "20261018T085104811922Z"
+}

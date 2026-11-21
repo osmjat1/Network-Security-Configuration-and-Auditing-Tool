@@ -1,0 +1,145 @@
+#!/usr/bin/env python3
+"""Compare two NetSecureOps JSON audit reports (offline, read-only)."""
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+import sys
+from collections import Counter
+from datetime import datetime, timezone
+from pathlib import Path
+
+SEVERITIES = ("Critical", "High", "Medium", "Low", "Info")
+
+
+def load_report(path: Path) -> dict:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise ValueError(f"Cannot read {path}: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid JSON in {path}: {exc}") from exc
+    if not isinstance(data, dict) or not isinstance(data.get("findings"), list):
+        raise ValueError(f"{path} is not a NetSecureOps report with a findings list.")
+    for finding in data["findings"]:
+        if not isinstance(finding, dict) or not finding.get("rule_id"):
+            raise ValueError(f"{path} contains a finding without rule_id.")
+    return data
+
+
+def finding_key(item: dict) -> tuple[str, str]:
+    # Compare by rule and affected target when present; fall back to rule/title.
+    target = str(item.get("target") or item.get("interface") or "")
+    return str(item.get("rule_id", "")), target
+
+
+def severity_counts(findings: list[dict]) -> dict[str, int]:
+    counts = Counter(str(f.get("severity", "Unknown")) for f in findings)
+    result = {level: counts.get(level, 0) for level in SEVERITIES}
+    for level, count in counts.items():
+        if level not in result:
+            result[level] = count
+    return result
+
+
+def compare_reports(before: dict, after: dict) -> dict:
+    before_map = {finding_key(f): f for f in before["findings"]}
+    after_map = {finding_key(f): f for f in after["findings"]}
+
+    resolved = [before_map[k] for k in before_map.keys() - after_map.keys()]
+    new = [after_map[k] for k in after_map.keys() - before_map.keys()]
+    unchanged = [after_map[k] for k in before_map.keys() & after_map.keys()]
+
+    before_score = int(before.get("risk_score", 0))
+    after_score = int(after.get("risk_score", 0))
+    delta = after_score - before_score
+    if delta < 0:
+        status = "Improved"
+    elif delta > 0:
+        status = "Worsened"
+    else:
+        status = "Unchanged"
+
+    return {
+        "tool": "NetSecureOps",
+        "comparison_version": "1.0.0",
+        "comparison_time_utc": datetime.now(timezone.utc).isoformat(),
+        "before_report": before.get("source_config") or before.get("config") or "before report",
+        "after_report": after.get("source_config") or after.get("config") or "after report",
+        "status": status,
+        "before_risk_score": before_score,
+        "after_risk_score": after_score,
+        "risk_score_delta": delta,
+        "resolved_findings_count": len(resolved),
+        "new_findings_count": len(new),
+        "unchanged_findings_count": len(unchanged),
+        "before_severity_counts": severity_counts(before["findings"]),
+        "after_severity_counts": severity_counts(after["findings"]),
+        "resolved_findings": sorted(resolved, key=lambda f: (str(f.get("rule_id")), str(f.get("title")))),
+        "new_findings": sorted(new, key=lambda f: (str(f.get("rule_id")), str(f.get("title")))),
+        "unchanged_findings": sorted(unchanged, key=lambda f: (str(f.get("rule_id")), str(f.get("title")))),
+        "limitations": [
+            "Comparison is based on rule_id and target/interface when present.",
+            "A lower heuristic risk score does not prove the network is secure.",
+            "Validate the configuration and connectivity in an isolated lab after changes."
+        ],
+    }
+
+
+def write_outputs(result: dict, out_dir: Path) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "comparison_report.json").write_text(
+        json.dumps(result, indent=2), encoding="utf-8"
+    )
+    columns = ["status", "rule_id", "title", "severity", "evidence", "recommendation"]
+    with (out_dir / "comparison_findings.csv").open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=columns)
+        writer.writeheader()
+        for status_key, status_label in (
+            ("resolved_findings", "Resolved"),
+            ("new_findings", "New"),
+            ("unchanged_findings", "Unchanged"),
+        ):
+            for item in result[status_key]:
+                writer.writerow({
+                    "status": status_label,
+                    "rule_id": item.get("rule_id", ""),
+                    "title": item.get("title", ""),
+                    "severity": item.get("severity", ""),
+                    "evidence": item.get("evidence", ""),
+                    "recommendation": item.get("recommendation", ""),
+                })
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Compare two NetSecureOps JSON audit reports.")
+    parser.add_argument("before", help="Path to the earlier audit_report.json")
+    parser.add_argument("after", help="Path to the later audit_report.json")
+    parser.add_argument("--out", default="reports/comparison", help="Output directory")
+    args = parser.parse_args()
+
+    try:
+        result = compare_reports(load_report(Path(args.before)), load_report(Path(args.after)))
+        write_outputs(result, Path(args.out))
+    except (ValueError, TypeError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    print("\n=== NetSecureOps Audit Comparison ===")
+    print(f"Status             : {result['status']}")
+    print(f"Before risk score  : {result['before_risk_score']}/100")
+    print(f"After risk score   : {result['after_risk_score']}/100")
+    print(f"Score change       : {result['risk_score_delta']:+d}")
+    print(f"Resolved findings  : {result['resolved_findings_count']}")
+    print(f"New findings       : {result['new_findings_count']}")
+    print(f"Unchanged findings : {result['unchanged_findings_count']}")
+    print(f"JSON report        : {Path(args.out) / 'comparison_report.json'}")
+    print(f"CSV report         : {Path(args.out) / 'comparison_findings.csv'}")
+    print("\nNote: the score is heuristic; validate all changes in an isolated lab.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+

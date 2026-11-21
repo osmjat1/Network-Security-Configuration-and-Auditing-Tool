@@ -1,0 +1,118 @@
+Building configuration...
+
+Current configuration : 1761 bytes
+!
+version 15.1
+no service timestamps log datetime msec
+service timestamps debug datetime msec
+service password-encryption
+!
+hostname R1
+!
+!
+!
+enable secret 5 $1$mERr$1cPXabgPq7EaN4r5oEjAK0
+!
+!
+!
+!
+!
+!
+no ip cef
+no ipv6 cef
+!
+!
+!
+username netadmin privilege 15 secret 5 $1$mERr$RomHN9h2.mXryhEiMFIvJ1
+!
+!
+license udi pid CISCO2811/K9 sn FTX1017FO3O-
+!
+!
+!
+!
+!
+!
+!
+!
+!
+ip ssh version 2
+no ip domain-lookup
+ip domain-name netsecure.local
+!
+!
+spanning-tree mode pvst
+!
+!
+!
+!
+!
+!
+interface FastEthernet0/0
+ ip address 10.0.0.1 255.255.255.0
+ ip access-group 1 out
+ duplex auto
+ speed auto
+!
+interface FastEthernet0/1
+ ip address 10.0.2.1 255.255.255.0
+ duplex auto
+ speed auto
+!
+interface FastEthernet1/0
+ ip address 10.0.1.1 255.255.255.0
+ ip access-group PC1_to_ in
+ duplex auto
+ speed auto
+!
+interface FastEthernet1/1
+ no ip address
+ duplex auto
+ speed auto
+ shutdown
+!
+interface Vlan1
+ no ip address
+ shutdown
+!
+ip classless
+!
+ip flow-export version 9
+!
+!
+access-list 1 permit 10.0.1.0 0.0.0.255
+access-list 1 deny 10.0.2.0 0.0.0.255
+access-list 100 permit tcp host 10.0.1.10 host 10.0.0.2 eq telnet
+access-list 100 deny tcp 10.0.1.0 0.0.0.255 host 10.0.0.2 eq telnet
+access-list 100 permit ip any any
+ip access-list extended PC1_to_
+ permit tcp host 10.0.1.10 host 10.0.0.2 eq telnet
+ deny tcp 10.0.1.0 0.0.0.255 host 10.0.0.2 eq telnet
+ permit ip any any
+ permit icmp host 10.0.0.11 host 10.0.0.2 echo
+ permit icmp host 10.0.1.11 host 10.0.0.2 echo
+ deny icmp 10.0.1.0 0.0.0.255 host 10.0.0.2 echo
+!
+!
+!
+!
+!
+line con 0
+ exec-timeout 0 0
+ logging synchronous
+ privilege level 15
+!
+line aux 0
+ exec-timeout 0 0
+ logging synchronous
+!
+line vty 0 4
+ exec-timeout 5 0
+ password 7 0807404F0A1207180A
+ logging synchronous
+ login local
+ transport input ssh
+!
+!
+!
+end

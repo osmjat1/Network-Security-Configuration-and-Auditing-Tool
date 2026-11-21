@@ -1,0 +1,9 @@
+status,rule_id,title,severity,target,before_evidence,after_evidence,verification_note,evidence_reference,operator_name
+Still Present,LOG-002,Remote syslog destination not detected,Medium,,No logging host/IP command was found.,No logging host/IP command was found.,The matching finding remains in the after-report.,,
+Still Present,AUTH-006,AAA new-model not detected,Low,,aaa new-model was not found.,aaa new-model was not found.,The matching finding remains in the after-report.,,
+Still Present,AUTH-007,Login failure throttling not detected,Low,,No login block-for command was found.,No login block-for command was found.,The matching finding remains in the after-report.,,
+Still Present,LOG-001,Log timestamps not explicitly configured,Low,,No service timestamps log datetime command was found.,No service timestamps log datetime command was found.,The matching finding remains in the after-report.,,
+Still Present,TIME-001,NTP server not detected,Low,,No ntp server command was found.,No ntp server command was found.,The matching finding remains in the after-report.,,
+Still Present,ACL-002,Routed interface has no interface ACL detected,Info,,FastEthernet0/1 has an IP address but no ip access-group command was detected in the interface block.,FastEthernet0/1 has an IP address but no ip access-group command was detected in the interface block.,The matching finding remains in the after-report.,,
+Still Present,MGMT-008,Login or MOTD banner not detected,Info,,"No login, motd, or exec banner was found.","No login, motd, or exec banner was found.",The matching finding remains in the after-report.,,
+Still Present,NET-002,Source-routing protection not explicit,Info,,no ip source-route was not found.,no ip source-route was not found.,The matching finding remains in the after-report.,,

@@ -1,0 +1,269 @@
+
+#!/usr/bin/env python3
+"""NetSecureOps: offline Cisco IOS configuration security auditor."""
+
+import argparse
+import csv
+import json
+import re
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+SEVERITY_POINTS = {
+    "Critical": 10,
+    "High": 7,
+    "Medium": 4,
+    "Low": 1,
+    "Info": 0,
+}
+
+
+def parse_config(text):
+    """Return global lines and interface-specific configuration blocks."""
+    global_lines = []
+    interfaces = {}
+    current_interface = None
+
+    for raw_line in text.splitlines():
+        line = raw_line.rstrip()
+        stripped = line.strip()
+
+        if not stripped or stripped.startswith("!"):
+            continue
+
+        if re.match(r"^interface\s+\S+", stripped, re.I):
+            current_interface = stripped.split(None, 1)[1]
+            interfaces.setdefault(current_interface, [])
+            continue
+
+        if current_interface:
+            if line[:1].isspace():
+                interfaces[current_interface].append(stripped)
+                continue
+            current_interface = None
+
+        global_lines.append(stripped)
+
+    return global_lines, interfaces
+
+
+def audit_config(text):
+    """Inspect configuration text and return structured findings."""
+    global_lines, interfaces = parse_config(text)
+    normalized = [line.lower() for line in global_lines]
+    findings = []
+
+    def add(rule_id, title, severity, evidence, recommendation):
+        findings.append({
+            "rule_id": rule_id,
+            "title": title,
+            "severity": severity,
+            "evidence": evidence,
+            "recommendation": recommendation,
+        })
+
+    def has_global(pattern):
+        return any(re.search(pattern, line, re.I) for line in global_lines)
+
+    # Authentication and management-plane checks
+    if not has_global(r"^enable secret(?:\s|$)"):
+        add(
+            "AUTH-001", "Enable secret not found", "High",
+            "No 'enable secret' command was found in global configuration.",
+            "Configure a strong enable secret using the approved credential policy.",
+        )
+
+    if has_global(r"^enable password(?:\s|$)"):
+        add(
+            "AUTH-002", "Legacy enable password command present", "Medium",
+            "An 'enable password' command exists.",
+            "Prefer 'enable secret'; review and remove legacy credentials safely.",
+        )
+
+    if not has_global(r"^service password-encryption$"):
+        add(
+            "AUTH-003", "Password obfuscation service not enabled", "Low",
+            "The 'service password-encryption' command was not found.",
+            "Review credential handling. This command provides weak obfuscation, "
+            "not strong encryption; use stronger supported secret mechanisms.",
+        )
+
+    if not has_global(r"^username\s+\S+\s+.*\bsecret\b"):
+        add(
+            "AUTH-004", "No local username using secret syntax detected", "Medium",
+            "No matching local username/secret line was found.",
+            "Verify the intended AAA design and configure protected local credentials "
+            "if local authentication is required.",
+        )
+
+    if not has_global(r"^ip ssh version 2$"):
+        add(
+            "MGMT-001", "SSH version 2 not explicitly configured", "Medium",
+            "The exact command 'ip ssh version 2' was not found.",
+            "If supported by the platform, explicitly configure SSH version 2.",
+        )
+
+    vty_blocks = []
+    for idx, line in enumerate(global_lines):
+        if re.match(r"^line vty\b", line, re.I):
+            block = []
+            for following in global_lines[idx + 1:]:
+                if re.match(r"^line\s+", following, re.I):
+                    break
+                block.append(following.lower())
+            vty_blocks.append((line, block))
+
+    if not vty_blocks:
+        add(
+            "MGMT-002", "VTY management lines not found", "Info",
+            "No 'line vty' section was detected.",
+            "Confirm that this is a complete configuration and review remote-management access.",
+        )
+    else:
+        for section, block in vty_blocks:
+            if any(re.search(r"\btransport input\s+.*\btelnet\b", x) for x in block):
+                add(
+                    "MGMT-003", "Telnet permitted on VTY lines", "High",
+                    f"{section}: transport input permits Telnet.",
+                    "Where supported, restrict remote management to SSH and validate access before applying changes.",
+                )
+            if any(re.match(r"^transport input\s+none$", x) for x in block):
+                continue
+            if not any(re.search(r"\btransport input\b", x) for x in block):
+                add(
+                    "MGMT-004", "VTY transport policy not explicit", "Low",
+                    f"No transport-input command found in {section}.",
+                    "Review the platform defaults and explicitly restrict management transports.",
+                )
+            if not any(re.search(r"\bexec-timeout\s+\d+\s+\d+", x) for x in block):
+                add(
+                    "MGMT-005", "VTY idle timeout not detected", "Low",
+                    f"No exec-timeout command found in {section}.",
+                    "Set an appropriate idle timeout according to your security policy.",
+                )
+
+    # Interface and Layer-2 checks
+    for interface, lines in interfaces.items():
+        lower = [line.lower() for line in lines]
+
+        if any(re.match(r"^switchport mode access$", x) for x in lower):
+            if any(re.match(r"^switchport access vlan 1$", x) for x in lower):
+                add(
+                    "VLAN-001", "Access port assigned to VLAN 1", "Medium",
+                    f"{interface} is explicitly configured as an access port in VLAN 1.",
+                    "Check the network design and move user access ports to an approved VLAN if appropriate.",
+                )
+
+        if any(re.match(r"^switchport mode trunk$", x) for x in lower):
+            allowed = [
+                x for x in lower
+                if re.match(r"^switchport trunk allowed vlan(?:\s|$)", x)
+            ]
+            if not allowed:
+                add(
+                    "VLAN-002", "Trunk allowed-VLAN list not explicit", "Medium",
+                    f"{interface} is configured as a trunk without an explicit allowed-VLAN line.",
+                    "Define only the VLANs required on this trunk, after verifying the topology.",
+                )
+            elif any(re.search(r"\ballowed vlan all\b", x) for x in allowed):
+                add(
+                    "VLAN-003", "Trunk allows all VLANs", "Low",
+                    f"{interface} includes 'switchport trunk allowed vlan all'.",
+                    "Restrict the trunk to VLANs required by the network design.",
+                )
+
+        if any(re.match(r"^switchport mode access$", x) for x in lower):
+            if not any(re.match(r"^switchport port-security$", x) for x in lower):
+                add(
+                    "PORT-001", "Access port security not detected", "Low",
+                    f"{interface} is an access port without a port-security command.",
+                    "Assess whether port security is supported and appropriate for this port.",
+                )
+
+    # A lightweight score: sum of findings; capped to 100.
+    score = min(
+        100,
+        sum(SEVERITY_POINTS[item["severity"]] for item in findings)
+    )
+
+    return {
+        "tool": "NetSecureOps",
+        "version": "0.1.0",
+        "audit_time_utc": datetime.now(timezone.utc).isoformat(),
+        "checks_run": len(findings),
+        "risk_score": score,
+        "risk_label": (
+            "High" if score >= 30 else
+            "Medium" if score >= 12 else
+            "Low"
+        ),
+        "findings": findings,
+        "limitations": [
+            "Offline static analysis only; no device connection was made.",
+            "A missing command is not proof of a vulnerability.",
+            "Rules must be validated against the device model, IOS version and approved policy.",
+            "The score is a project heuristic, not a formal CVSS score.",
+        ],
+    }
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Audit a Cisco IOS configuration file offline."
+    )
+    parser.add_argument("config", help="Path to a saved configuration text file")
+    parser.add_argument(
+        "--out", default="reports",
+        help="Output directory (default: reports)"
+    )
+    args = parser.parse_args()
+
+    source = Path(args.config)
+    if not source.is_file():
+        print(f"ERROR: Configuration file not found: {source}", file=sys.stderr)
+        return 2
+
+    try:
+        text = source.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        print(f"ERROR: Could not read configuration: {exc}", file=sys.stderr)
+        return 2
+
+    report = audit_config(text)
+    output_dir = Path(args.out)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    json_path = output_dir / "audit_report.json"
+    csv_path = output_dir / "findings.csv"
+
+    json_path.write_text(
+        json.dumps(report, indent=2),
+        encoding="utf-8",
+    )
+
+    with csv_path.open("w", newline="", encoding="utf-8") as handle:
+        columns = ["rule_id", "title", "severity", "evidence", "recommendation"]
+        writer = csv.DictWriter(handle, fieldnames=columns)
+        writer.writeheader()
+        writer.writerows(report["findings"])
+
+    print("\n=== NetSecureOps Audit Summary ===")
+    print(f"Configuration : {source}")
+    print(f"Risk score    : {report['risk_score']}/100 (heuristic)")
+    print(f"Risk label    : {report['risk_label']}")
+    print(f"Findings      : {len(report['findings'])}")
+
+    for item in report["findings"]:
+        print(f"\n[{item['severity']}] {item['rule_id']} - {item['title']}")
+        print(f"  Evidence: {item['evidence']}")
+        print(f"  Advice  : {item['recommendation']}")
+
+    print(f"\nJSON report: {json_path}")
+    print(f"CSV report : {csv_path}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+

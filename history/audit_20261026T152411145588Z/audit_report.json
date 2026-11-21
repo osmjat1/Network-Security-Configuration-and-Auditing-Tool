@@ -1,0 +1,384 @@
+{
+  "tool": "NetSecureOps",
+  "version": "0.2.0",
+  "audit_time_utc": "2026-10-26T15:24:11.509010+00:00",
+  "analysis_mode": "offline_static_configuration_analysis",
+  "checks_run": 29,
+  "checks_passed": 12,
+  "checks_failed": 16,
+  "checks_not_assessed": 1,
+  "rule_results": [
+    {
+      "rule_id": "AUTH-001",
+      "target": "global",
+      "status": "FAIL",
+      "evidence": "Enable secret is configured."
+    },
+    {
+      "rule_id": "AUTH-002",
+      "target": "global",
+      "status": "PASS",
+      "evidence": "Legacy enable password is absent."
+    },
+    {
+      "rule_id": "AUTH-003",
+      "target": "global",
+      "status": "FAIL",
+      "evidence": "Password obfuscation service is explicitly configured."
+    },
+    {
+      "rule_id": "AUTH-004",
+      "target": "global",
+      "status": "FAIL",
+      "evidence": "A local username with secret syntax is detected."
+    },
+    {
+      "rule_id": "AUTH-005",
+      "target": "global",
+      "status": "PASS",
+      "evidence": "No username-password-only pattern was detected."
+    },
+    {
+      "rule_id": "AUTH-006",
+      "target": "global",
+      "status": "FAIL",
+      "evidence": "AAA new-model is explicitly configured."
+    },
+    {
+      "rule_id": "AUTH-007",
+      "target": "global",
+      "status": "FAIL",
+      "evidence": "Login failure throttling is explicitly configured."
+    },
+    {
+      "rule_id": "MGMT-001",
+      "target": "global",
+      "status": "FAIL",
+      "evidence": "SSH version 2 is explicitly configured."
+    },
+    {
+      "rule_id": "MGMT-006",
+      "target": "global",
+      "status": "PASS",
+      "evidence": "Clear-text HTTP management server is not explicitly enabled."
+    },
+    {
+      "rule_id": "LOG-001",
+      "target": "global",
+      "status": "FAIL",
+      "evidence": "Log timestamps are explicitly configured."
+    },
+    {
+      "rule_id": "LOG-002",
+      "target": "global",
+      "status": "FAIL",
+      "evidence": "A remote syslog destination is detected."
+    },
+    {
+      "rule_id": "TIME-001",
+      "target": "global",
+      "status": "FAIL",
+      "evidence": "An NTP server is detected."
+    },
+    {
+      "rule_id": "MGMT-008",
+      "target": "global",
+      "status": "FAIL",
+      "evidence": "A login, MOTD, or exec banner is detected."
+    },
+    {
+      "rule_id": "SVC-001",
+      "target": "global",
+      "status": "PASS",
+      "evidence": "No clear-text SNMP community is detected."
+    },
+    {
+      "rule_id": "SVC-002",
+      "target": "global",
+      "status": "PASS",
+      "evidence": "No SNMP read-write community is detected."
+    },
+    {
+      "rule_id": "SVC-003",
+      "target": "global",
+      "status": "PASS",
+      "evidence": "HTTP and HTTPS management services are not both enabled."
+    },
+    {
+      "rule_id": "SVC-004",
+      "target": "global",
+      "status": "PASS",
+      "evidence": "CDP is not explicitly enabled globally."
+    },
+    {
+      "rule_id": "NET-001",
+      "target": "global",
+      "status": "PASS",
+      "evidence": "IP source routing is not explicitly enabled."
+    },
+    {
+      "rule_id": "NET-002",
+      "target": "global",
+      "status": "FAIL",
+      "evidence": "Source routing is explicitly disabled."
+    },
+    {
+      "rule_id": "NET-003",
+      "target": "global",
+      "status": "PASS",
+      "evidence": "IP directed broadcasts are not explicitly enabled."
+    },
+    {
+      "rule_id": "ACL-001",
+      "target": "global",
+      "status": "FAIL",
+      "evidence": "At least one IPv4 ACL definition is detected."
+    },
+    {
+      "rule_id": "NET-004",
+      "target": "global",
+      "status": "PASS",
+      "evidence": "IP redirects are not explicitly enabled globally."
+    },
+    {
+      "rule_id": "MGMT-002",
+      "target": "global",
+      "status": "PASS",
+      "evidence": "VTY management-line configuration detected."
+    },
+    {
+      "rule_id": "MGMT-003",
+      "target": "line vty 0 4",
+      "status": "NOT ASSESSED",
+      "evidence": "Not assessed: no explicit transport line; Telnet status is not proven."
+    },
+    {
+      "rule_id": "MGMT-004",
+      "target": "line vty 0 4",
+      "status": "FAIL",
+      "evidence": "No explicit VTY transport policy detected."
+    },
+    {
+      "rule_id": "MGMT-005",
+      "target": "line vty 0 4",
+      "status": "FAIL",
+      "evidence": "No explicit VTY idle timeout detected."
+    },
+    {
+      "rule_id": "MGMT-009",
+      "target": "line vty 0 4",
+      "status": "PASS",
+      "evidence": "Explicit VTY login method detected."
+    },
+    {
+      "rule_id": "ACL-002",
+      "target": "FastEthernet0/0.10",
+      "status": "FAIL",
+      "evidence": "No interface ACL attachment detected."
+    },
+    {
+      "rule_id": "ACL-002",
+      "target": "FastEthernet0/0.20",
+      "status": "FAIL",
+      "evidence": "No interface ACL attachment detected."
+    }
+  ],
+  "findings_count": 16,
+  "risk_score": 26,
+  "risk_label": "Medium",
+  "score_method": "Heuristic sum of finding severity points, capped at 100; not CVSS.",
+  "severity_counts": {
+    "Critical": 0,
+    "High": 1,
+    "Medium": 3,
+    "Low": 7,
+    "Info": 5
+  },
+  "findings": [
+    {
+      "rule_id": "AUTH-001",
+      "title": "Enable secret not found",
+      "severity": "High",
+      "category": "Authentication",
+      "evidence": "No enable secret command was found in global configuration.",
+      "recommendation": "Configure an approved strong enable secret if privileged EXEC access uses local credentials.",
+      "remediation_example": "enable secret <STRONG_SECRET>",
+      "confidence": "High",
+      "reference": "NetSecureOps project rule"
+    },
+    {
+      "rule_id": "AUTH-004",
+      "title": "No local username using secret syntax detected",
+      "severity": "Medium",
+      "category": "Authentication",
+      "evidence": "No local username ... secret command was found.",
+      "recommendation": "Verify the AAA design; configure protected local credentials if local authentication is required.",
+      "remediation_example": "username <ADMIN> privilege 15 secret <STRONG_SECRET>",
+      "confidence": "Medium",
+      "reference": "NetSecureOps project rule"
+    },
+    {
+      "rule_id": "LOG-002",
+      "title": "Remote syslog destination not detected",
+      "severity": "Medium",
+      "category": "Logging",
+      "evidence": "No logging host/IP command was found.",
+      "recommendation": "Consider sending logs to a protected central syslog/SIEM service; verify reachability and access controls.",
+      "remediation_example": "logging host <SYSLOG_SERVER_IP>",
+      "confidence": "Medium",
+      "reference": "NetSecureOps project rule"
+    },
+    {
+      "rule_id": "MGMT-001",
+      "title": "SSH version 2 not explicitly configured",
+      "severity": "Medium",
+      "category": "Management",
+      "evidence": "ip ssh version 2 was not found.",
+      "recommendation": "If supported, explicitly require SSH version 2 and validate client compatibility.",
+      "remediation_example": "ip ssh version 2",
+      "confidence": "High",
+      "reference": "NetSecureOps project rule"
+    },
+    {
+      "rule_id": "AUTH-003",
+      "title": "Password obfuscation service not enabled",
+      "severity": "Low",
+      "category": "Authentication",
+      "evidence": "service password-encryption was not found.",
+      "recommendation": "Review credential exposure. This command is weak obfuscation, not strong encryption.",
+      "remediation_example": "service password-encryption",
+      "confidence": "High",
+      "reference": "NetSecureOps project rule"
+    },
+    {
+      "rule_id": "AUTH-006",
+      "title": "AAA new-model not detected",
+      "severity": "Low",
+      "category": "Authentication",
+      "evidence": "aaa new-model was not found.",
+      "recommendation": "Assess centralized AAA (for example TACACS+ or RADIUS) for managed environments; local-only designs may be intentional.",
+      "remediation_example": "aaa new-model",
+      "confidence": "Medium",
+      "reference": "NetSecureOps project rule"
+    },
+    {
+      "rule_id": "AUTH-007",
+      "title": "Login failure throttling not detected",
+      "severity": "Low",
+      "category": "Authentication",
+      "evidence": "No login block-for command was found.",
+      "recommendation": "Where supported, configure login failure blocking based on operational policy.",
+      "remediation_example": "login block-for 120 attempts 3 within 60",
+      "confidence": "Medium",
+      "reference": "NetSecureOps project rule"
+    },
+    {
+      "rule_id": "LOG-001",
+      "title": "Log timestamps not explicitly configured",
+      "severity": "Low",
+      "category": "Logging",
+      "evidence": "No service timestamps log datetime command was found.",
+      "recommendation": "Enable useful timestamps for event correlation where supported.",
+      "remediation_example": "service timestamps log datetime msec localtime show-timezone",
+      "confidence": "Medium",
+      "reference": "NetSecureOps project rule"
+    },
+    {
+      "rule_id": "MGMT-004",
+      "title": "VTY transport policy not explicit",
+      "severity": "Low",
+      "category": "Management",
+      "evidence": "No transport input command found in line vty 0 4.",
+      "recommendation": "Review platform defaults and explicitly restrict management transports.",
+      "remediation_example": "line vty <RANGE>\n transport input ssh",
+      "confidence": "Medium",
+      "reference": "NetSecureOps project rule"
+    },
+    {
+      "rule_id": "MGMT-005",
+      "title": "VTY idle timeout not detected",
+      "severity": "Low",
+      "category": "Management",
+      "evidence": "No exec-timeout command found in line vty 0 4.",
+      "recommendation": "Set an idle timeout appropriate to the security policy.",
+      "remediation_example": "line vty <RANGE>\n exec-timeout 5 0",
+      "confidence": "High",
+      "reference": "NetSecureOps project rule"
+    },
+    {
+      "rule_id": "TIME-001",
+      "title": "NTP server not detected",
+      "severity": "Low",
+      "category": "Time Synchronization",
+      "evidence": "No ntp server command was found.",
+      "recommendation": "Configure approved time sources so logs can be correlated across devices.",
+      "remediation_example": "ntp server <TRUSTED_NTP_SERVER>",
+      "confidence": "Medium",
+      "reference": "NetSecureOps project rule"
+    },
+    {
+      "rule_id": "ACL-001",
+      "title": "No IPv4 ACL definitions detected",
+      "severity": "Info",
+      "category": "Access Control",
+      "evidence": "No numbered or named IPv4 ACL definition was found.",
+      "recommendation": "If filtering is part of the design, verify ACLs are defined and applied in the correct direction; absence may be intentional.",
+      "remediation_example": "! Define ACLs only from the approved network policy",
+      "confidence": "Low",
+      "reference": "NetSecureOps project rule"
+    },
+    {
+      "rule_id": "ACL-002",
+      "title": "Routed interface has no interface ACL detected",
+      "severity": "Info",
+      "category": "Access Control",
+      "evidence": "FastEthernet0/0.10 has an IP address but no ip access-group command was detected in the interface block.",
+      "recommendation": "Check the intended trust boundary and firewall/routing policy; an interface ACL is not required on every interface.",
+      "remediation_example": "interface FastEthernet0/0.10\n ip access-group <ACL_NAME> in",
+      "confidence": "Low",
+      "reference": "NetSecureOps project rule"
+    },
+    {
+      "rule_id": "ACL-002",
+      "title": "Routed interface has no interface ACL detected",
+      "severity": "Info",
+      "category": "Access Control",
+      "evidence": "FastEthernet0/0.20 has an IP address but no ip access-group command was detected in the interface block.",
+      "recommendation": "Check the intended trust boundary and firewall/routing policy; an interface ACL is not required on every interface.",
+      "remediation_example": "interface FastEthernet0/0.20\n ip access-group <ACL_NAME> in",
+      "confidence": "Low",
+      "reference": "NetSecureOps project rule"
+    },
+    {
+      "rule_id": "MGMT-008",
+      "title": "Login or MOTD banner not detected",
+      "severity": "Info",
+      "category": "Management",
+      "evidence": "No login, motd, or exec banner was found.",
+      "recommendation": "Use an organization-approved access warning banner where policy or law requires it.",
+      "remediation_example": "banner motd ^CUnauthorized access prohibited.^C",
+      "confidence": "Low",
+      "reference": "NetSecureOps project rule"
+    },
+    {
+      "rule_id": "NET-002",
+      "title": "Source-routing protection not explicit",
+      "severity": "Info",
+      "category": "Network Security",
+      "evidence": "no ip source-route was not found.",
+      "recommendation": "Confirm the platform default and explicitly disable source routing if supported by policy.",
+      "remediation_example": "no ip source-route",
+      "confidence": "Low",
+      "reference": "NetSecureOps project rule"
+    }
+  ],
+  "limitations": [
+    "Offline static analysis only; no device connection was made.",
+    "The tool does not automatically apply remediation commands.",
+    "A missing command is not proof of a vulnerability; defaults vary by platform and software version.",
+    "Some checks are informational and require validation against topology, device model, IOS version and approved policy.",
+    "Risk score is a project heuristic, not a formal CVSS score or compliance certification."
+  ],
+  "source_config": "uploads/packet_tracer_router_4.txt",
+  "audit_id": "20261026T152411145588Z"
+}

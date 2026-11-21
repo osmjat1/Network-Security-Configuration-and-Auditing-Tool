@@ -1,0 +1,128 @@
+{
+  "tool": "NetSecureOps Remediation Verification Engine",
+  "version": "1.0.0",
+  "generated_at_utc": "2026-10-24T11:11:09.568644+00:00",
+  "before_source_config": "packet_tracer_router.txt",
+  "after_source_config": "packet_tracer_router.txt",
+  "before_audit_time_utc": "2026-10-18T11:05:21.521258+00:00",
+  "after_audit_time_utc": "2026-10-18T11:06:11.763458+00:00",
+  "before_risk_score": 8,
+  "after_risk_score": 8,
+  "risk_score_delta": 0,
+  "before_findings_count": 8,
+  "after_findings_count": 8,
+  "status_counts": {
+    "Resolved \u2014 Verified": 0,
+    "Still Present": 8,
+    "New Finding": 0,
+    "Needs Verification": 0
+  },
+  "operator_verified_rule_ids": [],
+  "results": [
+    {
+      "status": "Still Present",
+      "rule_id": "LOG-002",
+      "title": "Remote syslog destination not detected",
+      "severity": "Medium",
+      "target": "",
+      "before_evidence": "No logging host/IP command was found.",
+      "after_evidence": "No logging host/IP command was found.",
+      "verification_note": "The matching finding remains in the after-report.",
+      "evidence_reference": "",
+      "operator_name": ""
+    },
+    {
+      "status": "Still Present",
+      "rule_id": "AUTH-006",
+      "title": "AAA new-model not detected",
+      "severity": "Low",
+      "target": "",
+      "before_evidence": "aaa new-model was not found.",
+      "after_evidence": "aaa new-model was not found.",
+      "verification_note": "The matching finding remains in the after-report.",
+      "evidence_reference": "",
+      "operator_name": ""
+    },
+    {
+      "status": "Still Present",
+      "rule_id": "AUTH-007",
+      "title": "Login failure throttling not detected",
+      "severity": "Low",
+      "target": "",
+      "before_evidence": "No login block-for command was found.",
+      "after_evidence": "No login block-for command was found.",
+      "verification_note": "The matching finding remains in the after-report.",
+      "evidence_reference": "",
+      "operator_name": ""
+    },
+    {
+      "status": "Still Present",
+      "rule_id": "LOG-001",
+      "title": "Log timestamps not explicitly configured",
+      "severity": "Low",
+      "target": "",
+      "before_evidence": "No service timestamps log datetime command was found.",
+      "after_evidence": "No service timestamps log datetime command was found.",
+      "verification_note": "The matching finding remains in the after-report.",
+      "evidence_reference": "",
+      "operator_name": ""
+    },
+    {
+      "status": "Still Present",
+      "rule_id": "TIME-001",
+      "title": "NTP server not detected",
+      "severity": "Low",
+      "target": "",
+      "before_evidence": "No ntp server command was found.",
+      "after_evidence": "No ntp server command was found.",
+      "verification_note": "The matching finding remains in the after-report.",
+      "evidence_reference": "",
+      "operator_name": ""
+    },
+    {
+      "status": "Still Present",
+      "rule_id": "ACL-002",
+      "title": "Routed interface has no interface ACL detected",
+      "severity": "Info",
+      "target": "",
+      "before_evidence": "FastEthernet0/1 has an IP address but no ip access-group command was detected in the interface block.",
+      "after_evidence": "FastEthernet0/1 has an IP address but no ip access-group command was detected in the interface block.",
+      "verification_note": "The matching finding remains in the after-report.",
+      "evidence_reference": "",
+      "operator_name": ""
+    },
+    {
+      "status": "Still Present",
+      "rule_id": "MGMT-008",
+      "title": "Login or MOTD banner not detected",
+      "severity": "Info",
+      "target": "",
+      "before_evidence": "No login, motd, or exec banner was found.",
+      "after_evidence": "No login, motd, or exec banner was found.",
+      "verification_note": "The matching finding remains in the after-report.",
+      "evidence_reference": "",
+      "operator_name": ""
+    },
+    {
+      "status": "Still Present",
+      "rule_id": "NET-002",
+      "title": "Source-routing protection not explicit",
+      "severity": "Info",
+      "target": "",
+      "before_evidence": "no ip source-route was not found.",
+      "after_evidence": "no ip source-route was not found.",
+      "verification_note": "The matching finding remains in the after-report.",
+      "evidence_reference": "",
+      "operator_name": ""
+    }
+  ],
+  "limitations": [
+    "Static configuration findings do not establish live device state.",
+    "A missing finding is not proof of remediation unless independently checked.",
+    "Operator verification is an attestation, not independent technical proof.",
+    "Finding identity uses rule ID, target/interface, and title or evidence.",
+    "Duplicate finding identities are treated as ambiguous.",
+    "Risk scores are heuristic and are not proof of security.",
+    "This module does not connect to or change network devices."
+  ]
+}

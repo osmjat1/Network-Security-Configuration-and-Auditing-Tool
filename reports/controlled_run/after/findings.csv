@@ -1,0 +1,13 @@
+rule_id,title,severity,category,evidence,recommendation,remediation_example,confidence,reference
+AUTH-001,Enable secret not found,High,Authentication,No enable secret command was found in global configuration.,Configure an approved strong enable secret if privileged EXEC access uses local credentials.,enable secret <STRONG_SECRET>,High,NetSecureOps project rule
+AUTH-004,No local username using secret syntax detected,Medium,Authentication,No local username ... secret command was found.,Verify the AAA design; configure protected local credentials if local authentication is required.,username <ADMIN> privilege 15 secret <STRONG_SECRET>,Medium,NetSecureOps project rule
+MGMT-001,SSH version 2 not explicitly configured,Medium,Management,ip ssh version 2 was not found.,"If supported, explicitly require SSH version 2 and validate client compatibility.",ip ssh version 2,High,NetSecureOps project rule
+MGMT-004,VTY transport policy not explicit,Low,Management,No transport input command found in line vty 0 4.,Review platform defaults and explicitly restrict management transports.,"line vty <RANGE>
+ transport input ssh",Medium,NetSecureOps project rule
+MGMT-005,VTY idle timeout not detected,Low,Management,No exec-timeout command found in line vty 0 4.,Set an idle timeout appropriate to the security policy.,"line vty <RANGE>
+ exec-timeout 5 0",High,NetSecureOps project rule
+ACL-001,No IPv4 ACL definitions detected,Info,Access Control,No numbered or named IPv4 ACL definition was found.,"If filtering is part of the design, verify ACLs are defined and applied in the correct direction; absence may be intentional.",! Define ACLs only from the approved network policy,Low,NetSecureOps project rule
+ACL-002,Routed interface has no interface ACL detected,Info,Access Control,FastEthernet0/0.10 has an IP address but no ip access-group command was detected in the interface block.,Check the intended trust boundary and firewall/routing policy; an interface ACL is not required on every interface.,"interface FastEthernet0/0.10
+ ip access-group <ACL_NAME> in",Low,NetSecureOps project rule
+ACL-002,Routed interface has no interface ACL detected,Info,Access Control,FastEthernet0/0.20 has an IP address but no ip access-group command was detected in the interface block.,Check the intended trust boundary and firewall/routing policy; an interface ACL is not required on every interface.,"interface FastEthernet0/0.20
+ ip access-group <ACL_NAME> in",Low,NetSecureOps project rule

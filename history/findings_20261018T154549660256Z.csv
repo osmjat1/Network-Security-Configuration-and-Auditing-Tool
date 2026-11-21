@@ -1,0 +1,32 @@
+rule_id,title,severity,category,evidence,recommendation,remediation_example,confidence,reference
+AUTH-001,Enable secret not found,High,Authentication,No enable secret command was found in global configuration.,Configure an approved strong enable secret if privileged EXEC access uses local credentials.,enable secret <STRONG_SECRET>,High,NetSecureOps project rule
+MGMT-003,Telnet permitted on VTY lines,High,Management,line vty 0 4: transport input permits Telnet.,Restrict management to SSH where supported; validate remote access before applying changes.,"line vty <RANGE>
+ transport input ssh",High,NetSecureOps project rule
+AUTH-002,Legacy enable password command present,Medium,Authentication,An enable password command exists.,Prefer enable secret and safely remove the legacy password after validating access.,no enable password,High,NetSecureOps project rule
+AUTH-004,No local username using secret syntax detected,Medium,Authentication,No local username ... secret command was found.,Verify the AAA design; configure protected local credentials if local authentication is required.,username <ADMIN> privilege 15 secret <STRONG_SECRET>,Medium,NetSecureOps project rule
+LOG-002,Remote syslog destination not detected,Medium,Logging,No logging host/IP command was found.,Consider sending logs to a protected central syslog/SIEM service; verify reachability and access controls.,logging host <SYSLOG_SERVER_IP>,Medium,NetSecureOps project rule
+MGMT-001,SSH version 2 not explicitly configured,Medium,Management,ip ssh version 2 was not found.,"If supported, explicitly require SSH version 2 and validate client compatibility.",ip ssh version 2,High,NetSecureOps project rule
+MGMT-009,VTY login method not explicit,Medium,Management,No login/login local command found in line vty 0 4.,Confirm an intended authentication method is configured for remote access.,"line vty <RANGE>
+ login local",Medium,NetSecureOps project rule
+VLAN-001,Access port assigned to VLAN 1,Medium,Layer 2,GigabitEthernet0/0 is an access port explicitly assigned to VLAN 1.,Move the endpoint to an approved access VLAN if appropriate for the topology.,"interface GigabitEthernet0/0
+ switchport access vlan <APPROVED_VLAN>",High,NetSecureOps project rule
+VLAN-002,Trunk allowed-VLAN list not explicit,Medium,Layer 2,GigabitEthernet0/1 is a trunk without an explicit allowed-VLAN line.,Define only required VLANs after verifying both ends of the trunk.,"interface GigabitEthernet0/1
+ switchport trunk allowed vlan <REQUIRED_VLANS>",High,NetSecureOps project rule
+AUTH-003,Password obfuscation service not enabled,Low,Authentication,service password-encryption was not found.,"Review credential exposure. This command is weak obfuscation, not strong encryption.",service password-encryption,High,NetSecureOps project rule
+AUTH-006,AAA new-model not detected,Low,Authentication,aaa new-model was not found.,Assess centralized AAA (for example TACACS+ or RADIUS) for managed environments; local-only designs may be intentional.,aaa new-model,Medium,NetSecureOps project rule
+AUTH-007,Login failure throttling not detected,Low,Authentication,No login block-for command was found.,"Where supported, configure login failure blocking based on operational policy.",login block-for 120 attempts 3 within 60,Medium,NetSecureOps project rule
+LOG-001,Log timestamps not explicitly configured,Low,Logging,No service timestamps log datetime command was found.,Enable useful timestamps for event correlation where supported.,service timestamps log datetime msec localtime show-timezone,Medium,NetSecureOps project rule
+MGMT-005,VTY idle timeout not detected,Low,Management,No exec-timeout command found in line vty 0 4.,Set an idle timeout appropriate to the security policy.,"line vty <RANGE>
+ exec-timeout 5 0",High,NetSecureOps project rule
+PORT-001,Access port security not detected,Low,Layer 2,GigabitEthernet0/0 is an access port without port-security.,Assess platform support and endpoint needs before enabling port security.,"interface GigabitEthernet0/0
+ switchport port-security",Medium,NetSecureOps project rule
+STP-002,Access port BPDU Guard not detected,Low,Layer 2,GigabitEthernet0/0 is an access port without BPDU Guard.,Consider BPDU Guard on edge ports to protect against unexpected spanning-tree BPDUs.,"interface GigabitEthernet0/0
+ spanning-tree bpduguard enable",Medium,NetSecureOps project rule
+TIME-001,NTP server not detected,Low,Time Synchronization,No ntp server command was found.,Configure approved time sources so logs can be correlated across devices.,ntp server <TRUSTED_NTP_SERVER>,Medium,NetSecureOps project rule
+ACL-001,No IPv4 ACL definitions detected,Info,Access Control,No numbered or named IPv4 ACL definition was found.,"If filtering is part of the design, verify ACLs are defined and applied in the correct direction; absence may be intentional.",! Define ACLs only from the approved network policy,Low,NetSecureOps project rule
+MGMT-008,Login or MOTD banner not detected,Info,Management,"No login, motd, or exec banner was found.",Use an organization-approved access warning banner where policy or law requires it.,banner motd ^CUnauthorized access prohibited.^C,Low,NetSecureOps project rule
+NET-002,Source-routing protection not explicit,Info,Network Security,no ip source-route was not found.,Confirm the platform default and explicitly disable source routing if supported by policy.,no ip source-route,Low,NetSecureOps project rule
+STP-001,Access port PortFast not detected,Info,Layer 2,GigabitEthernet0/0 is an access port without spanning-tree portfast.,Review edge-port design; configure PortFast only on genuine endpoint-facing ports.,"interface GigabitEthernet0/0
+ spanning-tree portfast",Low,NetSecureOps project rule
+VLAN-004,Trunk negotiation hardening not detected,Info,Layer 2,GigabitEthernet0/1 is a trunk without switchport nonegotiate.,"Where supported and appropriate, disable DTP negotiation on statically configured trunks.","interface GigabitEthernet0/1
+ switchport nonegotiate",Low,NetSecureOps project rule

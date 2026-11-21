@@ -1,0 +1,18 @@
+
+hostname LAB-R1
+!
+enable password labpassword
+!
+line vty 0 4
+ password labvty
+ transport input telnet
+!
+interface GigabitEthernet0/0
+ switchport mode access
+ switchport access vlan 1
+!
+interface GigabitEthernet0/1
+ switchport mode trunk
+!
+end
+

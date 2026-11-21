@@ -1,0 +1,11 @@
+rule_id,title,severity,evidence,recommendation
+AUTH-001,Enable secret not found,High,No 'enable secret' command was found in global configuration.,Configure a strong enable secret using the approved credential policy.
+AUTH-002,Legacy enable password command present,Medium,An 'enable password' command exists.,Prefer 'enable secret'; review and remove legacy credentials safely.
+AUTH-003,Password obfuscation service not enabled,Low,The 'service password-encryption' command was not found.,"Review credential handling. This command provides weak obfuscation, not strong encryption; use stronger supported secret mechanisms."
+AUTH-004,No local username using secret syntax detected,Medium,No matching local username/secret line was found.,Verify the intended AAA design and configure protected local credentials if local authentication is required.
+MGMT-001,SSH version 2 not explicitly configured,Medium,The exact command 'ip ssh version 2' was not found.,"If supported by the platform, explicitly configure SSH version 2."
+MGMT-003,Telnet permitted on VTY lines,High,line vty 0 4: transport input permits Telnet.,"Where supported, restrict remote management to SSH and validate access before applying changes."
+MGMT-005,VTY idle timeout not detected,Low,No exec-timeout command found in line vty 0 4.,Set an appropriate idle timeout according to your security policy.
+VLAN-001,Access port assigned to VLAN 1,Medium,GigabitEthernet0/0 is explicitly configured as an access port in VLAN 1.,Check the network design and move user access ports to an approved VLAN if appropriate.
+PORT-001,Access port security not detected,Low,GigabitEthernet0/0 is an access port without a port-security command.,Assess whether port security is supported and appropriate for this port.
+VLAN-002,Trunk allowed-VLAN list not explicit,Medium,GigabitEthernet0/1 is configured as a trunk without an explicit allowed-VLAN line.,"Define only the VLANs required on this trunk, after verifying the topology."

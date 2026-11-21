@@ -1,0 +1,4 @@
+device,source_config,status,risk_score,risk_label,findings_count,critical,high,medium,low,info,report_path,error
+router3,/home/osama/NetSecureOps/uploads/router3.txt,success,26,Medium,19,0,1,3,7,8,/home/osama/NetSecureOps/reports/multi_device/run_20261026T151144Z/router3/audit_report.json,
+router2,/home/osama/NetSecureOps/uploads/router2.txt,success,26,Medium,19,0,1,3,7,8,/home/osama/NetSecureOps/reports/multi_device/run_20261026T151144Z/router2/audit_report.json,
+packet_tracer_router_3,/home/osama/NetSecureOps/uploads/packet_tracer_router_3.txt,success,26,Medium,16,0,1,3,7,5,/home/osama/NetSecureOps/reports/multi_device/run_20261026T151144Z/packet_tracer_router_3/audit_report.json,

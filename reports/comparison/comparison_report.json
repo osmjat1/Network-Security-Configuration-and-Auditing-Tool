@@ -1,0 +1,125 @@
+{
+  "tool": "NetSecureOps",
+  "comparison_version": "1.0.0",
+  "comparison_time_utc": "2026-10-19T15:40:35.655628+00:00",
+  "before_report": "packet_tracer_router.txt",
+  "after_report": "packet_tracer_router.txt",
+  "status": "Unchanged",
+  "before_risk_score": 8,
+  "after_risk_score": 8,
+  "risk_score_delta": 0,
+  "resolved_findings_count": 0,
+  "new_findings_count": 0,
+  "unchanged_findings_count": 8,
+  "before_severity_counts": {
+    "Critical": 0,
+    "High": 0,
+    "Medium": 1,
+    "Low": 4,
+    "Info": 3
+  },
+  "after_severity_counts": {
+    "Critical": 0,
+    "High": 0,
+    "Medium": 1,
+    "Low": 4,
+    "Info": 3
+  },
+  "resolved_findings": [],
+  "new_findings": [],
+  "unchanged_findings": [
+    {
+      "rule_id": "ACL-002",
+      "title": "Routed interface has no interface ACL detected",
+      "severity": "Info",
+      "category": "Access Control",
+      "evidence": "FastEthernet0/1 has an IP address but no ip access-group command was detected in the interface block.",
+      "recommendation": "Check the intended trust boundary and firewall/routing policy; an interface ACL is not required on every interface.",
+      "remediation_example": "interface FastEthernet0/1\n ip access-group <ACL_NAME> in",
+      "confidence": "Low",
+      "reference": "NetSecureOps project rule"
+    },
+    {
+      "rule_id": "AUTH-006",
+      "title": "AAA new-model not detected",
+      "severity": "Low",
+      "category": "Authentication",
+      "evidence": "aaa new-model was not found.",
+      "recommendation": "Assess centralized AAA (for example TACACS+ or RADIUS) for managed environments; local-only designs may be intentional.",
+      "remediation_example": "aaa new-model",
+      "confidence": "Medium",
+      "reference": "NetSecureOps project rule"
+    },
+    {
+      "rule_id": "AUTH-007",
+      "title": "Login failure throttling not detected",
+      "severity": "Low",
+      "category": "Authentication",
+      "evidence": "No login block-for command was found.",
+      "recommendation": "Where supported, configure login failure blocking based on operational policy.",
+      "remediation_example": "login block-for 120 attempts 3 within 60",
+      "confidence": "Medium",
+      "reference": "NetSecureOps project rule"
+    },
+    {
+      "rule_id": "LOG-001",
+      "title": "Log timestamps not explicitly configured",
+      "severity": "Low",
+      "category": "Logging",
+      "evidence": "No service timestamps log datetime command was found.",
+      "recommendation": "Enable useful timestamps for event correlation where supported.",
+      "remediation_example": "service timestamps log datetime msec localtime show-timezone",
+      "confidence": "Medium",
+      "reference": "NetSecureOps project rule"
+    },
+    {
+      "rule_id": "LOG-002",
+      "title": "Remote syslog destination not detected",
+      "severity": "Medium",
+      "category": "Logging",
+      "evidence": "No logging host/IP command was found.",
+      "recommendation": "Consider sending logs to a protected central syslog/SIEM service; verify reachability and access controls.",
+      "remediation_example": "logging host <SYSLOG_SERVER_IP>",
+      "confidence": "Medium",
+      "reference": "NetSecureOps project rule"
+    },
+    {
+      "rule_id": "MGMT-008",
+      "title": "Login or MOTD banner not detected",
+      "severity": "Info",
+      "category": "Management",
+      "evidence": "No login, motd, or exec banner was found.",
+      "recommendation": "Use an organization-approved access warning banner where policy or law requires it.",
+      "remediation_example": "banner motd ^CUnauthorized access prohibited.^C",
+      "confidence": "Low",
+      "reference": "NetSecureOps project rule"
+    },
+    {
+      "rule_id": "NET-002",
+      "title": "Source-routing protection not explicit",
+      "severity": "Info",
+      "category": "Network Security",
+      "evidence": "no ip source-route was not found.",
+      "recommendation": "Confirm the platform default and explicitly disable source routing if supported by policy.",
+      "remediation_example": "no ip source-route",
+      "confidence": "Low",
+      "reference": "NetSecureOps project rule"
+    },
+    {
+      "rule_id": "TIME-001",
+      "title": "NTP server not detected",
+      "severity": "Low",
+      "category": "Time Synchronization",
+      "evidence": "No ntp server command was found.",
+      "recommendation": "Configure approved time sources so logs can be correlated across devices.",
+      "remediation_example": "ntp server <TRUSTED_NTP_SERVER>",
+      "confidence": "Medium",
+      "reference": "NetSecureOps project rule"
+    }
+  ],
+  "limitations": [
+    "Comparison is based on rule_id and target/interface when present.",
+    "A lower heuristic risk score does not prove the network is secure.",
+    "Validate the configuration and connectivity in an isolated lab after changes."
+  ]
+}

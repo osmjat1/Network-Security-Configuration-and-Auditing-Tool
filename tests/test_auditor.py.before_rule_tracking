@@ -1,0 +1,41 @@
+
+import unittest
+
+from src.auditor import audit_config
+
+
+class AuditorTests(unittest.TestCase):
+    def test_detects_telnet(self):
+        config = """
+hostname TEST
+line vty 0 4
+ transport input telnet
+!
+"""
+        result = audit_config(config)
+        rule_ids = {item["rule_id"] for item in result["findings"]}
+        self.assertIn("MGMT-003", rule_ids)
+
+    def test_detects_vlan_one_access_port(self):
+        config = """
+hostname TEST
+interface GigabitEthernet0/1
+ switchport mode access
+ switchport access vlan 1
+!
+"""
+        result = audit_config(config)
+        rule_ids = {item["rule_id"] for item in result["findings"]}
+        self.assertIn("VLAN-001", rule_ids)
+
+    def test_empty_configuration_returns_report(self):
+        result = audit_config("")
+        self.assertEqual(result["tool"], "NetSecureOps")
+        self.assertIn("findings", result)
+        self.assertGreaterEqual(result["risk_score"], 0)
+        self.assertLessEqual(result["risk_score"], 100)
+
+
+if __name__ == "__main__":
+    unittest.main()
+

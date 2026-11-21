@@ -1,0 +1,61 @@
+{
+  "tool": "NetSecureOps Multi-Device Audit",
+  "version": "1.0.0",
+  "run_time_utc": "2026-10-27T11:58:31.754248+00:00",
+  "devices_requested": 3,
+  "devices_successful": 3,
+  "devices_failed": 0,
+  "highest_risk_device": "router_running_config",
+  "devices": [
+    {
+      "device": "router_running_config",
+      "source_config": "/home/osama/NetSecureOps/samples/router_running_config.txt",
+      "status": "success",
+      "report_path": "/home/osama/NetSecureOps/reports/multi_device/run_20261027T115830Z/router_running_config/audit_report.json",
+      "risk_score": 50,
+      "risk_label": "Critical",
+      "findings_count": 22,
+      "severity_counts": {
+        "High": 2,
+        "Medium": 7,
+        "Low": 8,
+        "Info": 5
+      }
+    },
+    {
+      "device": "R1",
+      "source_config": "/home/osama/NetSecureOps/uploads/R1.txt",
+      "status": "success",
+      "report_path": "/home/osama/NetSecureOps/reports/multi_device/run_20261027T115830Z/R1/audit_report.json",
+      "risk_score": 26,
+      "risk_label": "Medium",
+      "findings_count": 15,
+      "severity_counts": {
+        "High": 1,
+        "Medium": 3,
+        "Low": 7,
+        "Info": 4
+      }
+    },
+    {
+      "device": "packet_tracer_router_4",
+      "source_config": "/home/osama/NetSecureOps/uploads/packet_tracer_router_4.txt",
+      "status": "success",
+      "report_path": "/home/osama/NetSecureOps/reports/multi_device/run_20261027T115830Z/packet_tracer_router_4/audit_report.json",
+      "risk_score": 26,
+      "risk_label": "Medium",
+      "findings_count": 16,
+      "severity_counts": {
+        "High": 1,
+        "Medium": 3,
+        "Low": 7,
+        "Info": 5
+      }
+    }
+  ],
+  "limitations": [
+    "Audits saved configuration files only; no live device connection is made.",
+    "Risk scores are project heuristics, not CVSS scores.",
+    "Validate findings against device model, IOS features and intended network policy."
+  ]
+}

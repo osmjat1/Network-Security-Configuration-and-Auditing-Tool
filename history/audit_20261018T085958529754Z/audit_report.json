@@ -1,0 +1,17 @@
+{
+  "tool": "NetSecureOps",
+  "version": "0.1.0",
+  "audit_time_utc": "2026-10-18T08:59:58.656154+00:00",
+  "checks_run": 0,
+  "risk_score": 0,
+  "risk_label": "Low",
+  "findings": [],
+  "limitations": [
+    "Offline static analysis only; no device connection was made.",
+    "A missing command is not proof of a vulnerability.",
+    "Rules must be validated against the device model, IOS version and approved policy.",
+    "The score is a project heuristic, not a formal CVSS score."
+  ],
+  "source_config": "uploads/packet_tracer_router.txt",
+  "audit_id": "20261018T085958529754Z"
+}

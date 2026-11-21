@@ -1,0 +1,508 @@
+import json
+import subprocess
+import sys
+from pathlib import Path
+from datetime import datetime, timezone
+
+import pandas as pd
+import streamlit as st
+
+ROOT = Path(__file__).resolve().parent.parent
+REPORT = ROOT / "reports" / "audit_report.json"
+DEFAULT_CONFIG = ROOT / "samples" / "router_running_config.txt"
+AUDITOR = ROOT / "src" / "auditor.py"
+UPLOAD_DIR = ROOT / "uploads"
+HISTORY_DIR = ROOT / "history"
+
+# Works with: streamlit run src/dashboard.py from ~/NetSecureOps
+try:
+    from src.collector import save_config
+except ModuleNotFoundError:
+    from collector import save_config
+
+st.set_page_config(
+    page_title="NetSecureOps | SOC",
+    page_icon="🛡️",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# ---------- Design system ----------
+st.markdown("""
+<style>
+.stApp { background: #0B1120; color: #E5E7EB; }
+[data-testid="stHeader"] { background: rgba(11,17,32,0.92); }
+[data-testid="stSidebar"] { background: #111827; border-right: 1px solid #263247; }
+.block-container { padding-top: 1.5rem; padding-bottom: 2rem; max-width: 1600px; }
+h1, h2, h3 { color: #F8FAFC !important; }
+p, label, .stMarkdown { color: #CBD5E1; }
+.ns-card {
+    background: linear-gradient(145deg,#172033,#111827);
+    border: 1px solid #29364B; border-radius: 14px;
+    padding: 18px 20px; min-height: 118px;
+}
+.ns-label { color: #94A3B8; font-size: 12px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 1px; }
+.ns-value { font-size: 30px; font-weight: 750; margin-top: 8px; color: #F8FAFC; }
+.ns-sub { font-size: 12px; margin-top: 5px; color: #94A3B8; }
+.ns-section { background: #111827; border: 1px solid #263247;
+    border-radius: 14px; padding: 18px; margin-bottom: 14px; }
+.ns-status { display: inline-block; padding: 5px 10px; border-radius: 7px;
+    font-size: 12px; font-weight: 750; }
+div.stButton > button { border-radius: 8px; border: 1px solid #334155;
+    min-height: 42px; font-weight: 650; }
+div.stButton > button[kind="primary"] {
+    background: #0EA5E9; border-color: #0284C7; color: white;
+}
+[data-testid="stMetric"] { background: #111827; border: 1px solid #263247;
+    padding: 14px; border-radius: 12px; }
+[data-testid="stDataFrame"] { border: 1px solid #263247; border-radius: 10px; }
+hr { border-color: #263247; }
+footer { visibility: hidden; }
+</style>
+""", unsafe_allow_html=True)
+
+SEVERITY_COLORS = {
+    "Critical": "#EF4444", "High": "#F97316", "Medium": "#EAB308",
+    "Low": "#38BDF8", "Info": "#A78BFA", "Informational": "#A78BFA",
+    "Unknown": "#94A3B8",
+}
+ALLOWED_EXTENSIONS = {".txt", ".cfg", ".conf"}
+
+
+def load_report():
+    if not REPORT.is_file():
+        return None
+    try:
+        return json.loads(REPORT.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def list_configs():
+    """Return project-local supported configs, newest uploads first."""
+    configs = []
+    if DEFAULT_CONFIG.is_file():
+        configs.append(DEFAULT_CONFIG)
+    if UPLOAD_DIR.is_dir():
+        uploads = [
+            p for p in UPLOAD_DIR.iterdir()
+            if p.is_file() and p.suffix.lower() in ALLOWED_EXTENSIONS
+        ]
+        uploads.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        configs.extend(uploads)
+    return configs
+
+
+def run_audit(config_path: Path):
+    """Run the existing offline auditor on the selected config and preserve history."""
+    config_path = Path(config_path).resolve()
+    project_root = ROOT.resolve()
+
+    try:
+        config_path.relative_to(project_root)
+    except ValueError:
+        return False, "For safety, audit only configuration files inside NetSecureOps."
+
+    if not config_path.is_file():
+        return False, "Selected configuration file was not found."
+    if config_path.suffix.lower() not in ALLOWED_EXTENSIONS:
+        return False, "Unsupported file type. Use .txt, .cfg, or .conf."
+    if not AUDITOR.is_file():
+        return False, "Auditor script was not found."
+
+    audit_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    run_dir = HISTORY_DIR / f"audit_{audit_id}"
+    run_dir.mkdir(parents=True, exist_ok=False)
+
+    try:
+        result = subprocess.run(
+            [
+                sys.executable, str(AUDITOR), str(config_path),
+                "--out", str(run_dir),
+            ],
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, f"Could not run audit: {exc}"
+
+    if result.returncode != 0:
+        details = result.stderr.strip() or result.stdout.strip() or "Audit failed."
+        return False, details
+
+    run_report_path = run_dir / "audit_report.json"
+    run_csv_path = run_dir / "findings.csv"
+    if not run_report_path.is_file():
+        return False, "Auditor did not create audit_report.json in the history folder."
+
+    try:
+        report_data = json.loads(run_report_path.read_text(encoding="utf-8"))
+        report_data["source_config"] = str(config_path.relative_to(project_root))
+        report_data["audit_id"] = audit_id
+        # Write source metadata into this audit's own report.
+        run_report_path.write_text(json.dumps(report_data, indent=2), encoding="utf-8")
+
+        REPORT.parent.mkdir(parents=True, exist_ok=True)
+        REPORT.write_text(json.dumps(report_data, indent=2), encoding="utf-8")
+
+        # Also keep a top-level CSV copy for easy browsing.
+        if run_csv_path.is_file():
+            (HISTORY_DIR / f"findings_{audit_id}.csv").write_bytes(run_csv_path.read_bytes())
+    except (OSError, json.JSONDecodeError) as exc:
+        return False, f"Audit ran, but saving the report failed: {exc}"
+
+    return True, f"Audit completed for {config_path.name}. History ID: {audit_id}"
+
+
+def card(label, value, subtitle="", color="#F8FAFC"):
+    st.markdown(
+        f"""
+        <div class="ns-card">
+          <div class="ns-label">{label}</div>
+          <div class="ns-value" style="color:{color}">{value}</div>
+          <div class="ns-sub">{subtitle}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def risk_color(score):
+    if score >= 70:
+        return "#EF4444", "CRITICAL"
+    if score >= 40:
+        return "#F97316", "HIGH"
+    if score >= 20:
+        return "#EAB308", "MODERATE"
+    return "#22C55E", "LOW"
+
+
+# ---------- Sidebar ----------
+with st.sidebar:
+    st.markdown("## 🛡️ NetSecureOps")
+    st.caption("NETWORK SECURITY OPERATIONS")
+    st.markdown("---")
+
+    page = st.radio(
+        "WORKSPACE",
+        ["Overview", "Security Findings", "Reports & Evidence", "About"],
+        label_visibility="visible",
+    )
+
+    st.markdown("---")
+    st.markdown("### Configuration collection")
+    st.caption("Offline saved-configuration audit")
+
+    uploaded_file = st.file_uploader(
+        "Upload router/switch config",
+        type=["txt", "cfg", "conf"],
+        help="Text configuration only; maximum size 2 MB.",
+    )
+    if uploaded_file is not None:
+        if st.button("Save uploaded configuration", use_container_width=True):
+            try:
+                saved_path = save_config(uploaded_file.name, uploaded_file.getvalue())
+                st.session_state["selected_config"] = str(saved_path)
+                st.success(f"Saved {saved_path.name}")
+                st.rerun()
+            except (ValueError, OSError) as exc:
+                st.error(f"Upload failed: {exc}")
+
+    configs = list_configs()
+    config_values = [str(p) for p in configs]
+    previous = st.session_state.get("selected_config")
+    if previous not in config_values:
+        previous = config_values[0] if config_values else ""
+
+    if config_values:
+        selected_config = st.selectbox(
+            "Configuration to audit",
+            options=config_values,
+            index=config_values.index(previous),
+            format_func=lambda value: str(Path(value).relative_to(ROOT)),
+        )
+        st.session_state["selected_config"] = selected_config
+        st.caption(f"Selected: {Path(selected_config).name}")
+    else:
+        selected_config = ""
+        st.info("Upload a configuration file to begin.")
+
+    if st.button(
+        "▶ Run Security Audit",
+        type="primary",
+        use_container_width=True,
+        disabled=not bool(selected_config),
+    ):
+        with st.spinner("Analysing selected configuration..."):
+            ok, message = run_audit(Path(selected_config))
+        if ok:
+            st.success(message)
+            st.rerun()
+        else:
+            st.error(message)
+
+    st.markdown("---")
+    st.caption("NetSecureOps • Development build")
+    st.caption("No live device telemetry is collected.")
+
+# ---------- Load audit data ----------
+report = load_report()
+
+st.markdown("# 🛡️ NetSecureOps")
+st.caption("NETWORK SECURITY CONFIGURATION AUDITING PLATFORM")
+
+if report is None:
+    st.info("No audit report is available yet. Select or upload a configuration, then run an audit.")
+    st.stop()
+
+findings = report.get("findings", [])
+if not isinstance(findings, list):
+    findings = []
+df = pd.DataFrame(findings)
+
+expected_columns = [
+    "rule_id", "severity", "title", "description", "evidence", "recommendation",
+]
+for col in expected_columns:
+    if col not in df.columns:
+        df[col] = ""
+
+df["severity"] = df["severity"].fillna("Unknown").astype(str).str.title()
+df["rule_id"] = df["rule_id"].fillna("N/A").astype(str)
+
+try:
+    score = max(0, min(100, int(report.get("risk_score", 0))))
+except (TypeError, ValueError):
+    score = 0
+
+risk_hex, risk_name = risk_color(score)
+total = len(df)
+counts = df["severity"].value_counts()
+critical = int(counts.get("Critical", 0))
+high = int(counts.get("High", 0))
+medium = int(counts.get("Medium", 0))
+low = int(counts.get("Low", 0))
+source_config = report.get("source_config", "Legacy/default report (source not recorded)")
+
+# ---------- Overview ----------
+if page == "Overview":
+    st.markdown("### Security posture")
+    st.caption(f"Report time: {report.get('audit_time_utc', 'Not recorded')} UTC")
+    st.caption(f"Audited configuration: {source_config}")
+
+    a, b, c, d = st.columns(4)
+    with a:
+        card("Risk score", f"{score}/100", "Heuristic score from auditor", risk_hex)
+    with b:
+        card("Total findings", total, "From the current audit", "#38BDF8")
+    with c:
+        card("Critical + High", critical + high, "Prioritise remediation", "#F97316")
+    with d:
+        card("Configuration", "LOADED", Path(source_config).name, "#22C55E")
+
+    st.markdown(
+        f'<span class="ns-status" style="background:{risk_hex}22;'
+        f'color:{risk_hex};border:1px solid {risk_hex}66">'
+        f'RISK STATUS: {risk_name}</span>',
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("### Findings analytics")
+    left, right = st.columns([1.15, 1])
+    order = ["Critical", "High", "Medium", "Low", "Info", "Informational", "Unknown"]
+
+    with left:
+        st.markdown('<div class="ns-section">', unsafe_allow_html=True)
+        st.markdown("#### Findings by severity")
+        chart_data = counts.reindex(order, fill_value=0)
+        chart_data = chart_data[chart_data > 0]
+        if not chart_data.empty:
+            st.bar_chart(chart_data, color="#38BDF8")
+        else:
+            st.success("No security findings in this report.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with right:
+        st.markdown('<div class="ns-section">', unsafe_allow_html=True)
+        st.markdown("#### Severity breakdown")
+        if total:
+            for label in order:
+                n = int(counts.get(label, 0))
+                if n == 0:
+                    continue
+                pct = n / total * 100
+                color = SEVERITY_COLORS.get(label, "#94A3B8")
+                st.markdown(
+                    f'<div style="display:flex;justify-content:space-between;'
+                    f'margin-top:12px"><span>{label}</span>'
+                    f'<b style="color:{color}">{n} · {pct:.0f}%</b></div>'
+                    f'<div style="height:8px;background:#263247;border-radius:8px;'
+                    f'margin-top:5px"><div style="width:{pct}%;height:8px;'
+                    f'background:{color};border-radius:8px"></div></div>',
+                    unsafe_allow_html=True,
+                )
+        else:
+            st.success("No findings to break down.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("### Priority findings")
+    priority = df[df["severity"].isin(["Critical", "High", "Medium"])]
+    if priority.empty:
+        st.success("No Critical, High or Medium findings are present.")
+    else:
+        st.dataframe(
+            priority[["rule_id", "severity", "title", "recommendation"]],
+            hide_index=True,
+            use_container_width=True,
+        )
+
+# ---------- Findings ----------
+elif page == "Security Findings":
+    st.markdown("### Security findings explorer")
+    st.caption("Filter findings and inspect the evidence from the current report.")
+
+    f1, f2 = st.columns([1, 2])
+    with f1:
+        selected_severities = st.multiselect(
+            "Severity",
+            options=sorted(df["severity"].unique().tolist()),
+            default=sorted(df["severity"].unique().tolist()),
+        )
+    with f2:
+        query = st.text_input("Search rules, evidence or recommendations")
+
+    filtered = df[df["severity"].isin(selected_severities)].copy()
+    searchable = ["rule_id", "title", "description", "evidence", "recommendation"]
+    if query:
+        mask = filtered[searchable].fillna("").astype(str).apply(
+            lambda col: col.str.contains(query, case=False, regex=False)
+        ).any(axis=1)
+        filtered = filtered[mask]
+
+    st.caption(f"Showing {len(filtered)} of {total} findings")
+    if filtered.empty:
+        st.info("No findings match the selected filters.")
+    else:
+        st.dataframe(
+            filtered[["rule_id", "severity", "title", "description"]],
+            hide_index=True,
+            use_container_width=True,
+        )
+        selected_idx = st.selectbox(
+            "Inspect a finding",
+            filtered.index.tolist(),
+            format_func=lambda i: (
+                f"{filtered.loc[i, 'rule_id']} — "
+                f"{filtered.loc[i, 'title'] or 'Untitled finding'}"
+            ),
+        )
+        finding = filtered.loc[selected_idx]
+        color = SEVERITY_COLORS.get(finding["severity"], "#94A3B8")
+
+        st.markdown('<div class="ns-section">', unsafe_allow_html=True)
+        st.markdown(
+            f'<span class="ns-status" style="background:{color}22;'
+            f'color:{color};border:1px solid {color}66">'
+            f'{finding["severity"].upper()}</span>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(f"#### {finding['rule_id']} — {finding['title']}")
+        st.markdown("**Description**")
+        st.write(finding["description"] or "No description recorded.")
+        st.markdown("**Configuration evidence**")
+        st.code(finding["evidence"] or "No evidence recorded.", language=None)
+        st.markdown("**Recommended remediation**")
+        st.write(finding["recommendation"] or "No recommendation recorded.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+# ---------- Reports ----------
+elif page == "Reports & Evidence":
+    st.markdown("### Reports & evidence")
+    st.caption("Export the results produced by the current audit.")
+
+    st.download_button(
+        "⬇ Download JSON report",
+        data=json.dumps(report, indent=2),
+        file_name="netsecureops_audit_report.json",
+        mime="application/json",
+        use_container_width=True,
+    )
+    st.download_button(
+        "⬇ Download findings CSV",
+        data=df.to_csv(index=False),
+        file_name="netsecureops_findings.csv",
+        mime="text/csv",
+        use_container_width=True,
+    )
+
+    st.markdown("### Audit metadata")
+    metadata = {
+        "Tool": report.get("tool", "NetSecureOps"),
+        "Version": report.get("version", "Unknown"),
+        "Audit time (UTC)": report.get("audit_time_utc", "Not recorded"),
+        "Audit ID": report.get("audit_id", "Not recorded"),
+        "Reported checks": report.get("checks_run", "Not recorded"),
+        "Risk score": score,
+        "Risk label from auditor": report.get("risk_label", "Unknown"),
+        "Source": source_config,
+    }
+    st.json(metadata)
+
+    st.markdown("### Current finding records")
+    st.dataframe(df, hide_index=True, use_container_width=True)
+
+    st.markdown("### Saved audit history")
+    if HISTORY_DIR.is_dir():
+        history_reports = sorted(
+            HISTORY_DIR.glob("audit_*/audit_report.json"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        if history_reports:
+            rows = []
+            for path in history_reports[:50]:
+                try:
+                    item = json.loads(path.read_text(encoding="utf-8"))
+                    rows.append({
+                        "audit_id": item.get("audit_id", path.parent.name),
+                        "source_config": item.get("source_config", "Unknown"),
+                        "audit_time_utc": item.get("audit_time_utc", "Unknown"),
+                        "risk_score": item.get("risk_score", "Unknown"),
+                        "findings": len(item.get("findings", [])),
+                    })
+                except (OSError, json.JSONDecodeError):
+                    continue
+            if rows:
+                st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+        else:
+            st.info("No saved audit history yet. Run an audit to create the first record.")
+    else:
+        st.info("No saved audit history yet.")
+
+# ---------- About ----------
+elif page == "About":
+    st.markdown("### About NetSecureOps")
+    st.write(
+        "NetSecureOps is a development-stage network configuration auditing "
+        "project. It analyses a saved configuration and presents the results for review."
+    )
+    st.markdown("#### Current capabilities")
+    st.write("- Offline configuration audit")
+    st.write("- Upload and select saved router/switch configurations")
+    st.write("- Severity-based findings and evidence")
+    st.write("- JSON and CSV report export")
+    st.write("- Saved audit history")
+    st.write("- Searchable findings")
+    st.markdown("#### Current limitations")
+    st.write("- This build audits saved configuration text, not live device telemetry.")
+    st.write("- Findings depend on the rules implemented in the auditor.")
+    st.write("- Risk scores are heuristic, not a validated enterprise risk model.")
+    st.write("- Remediation is advisory; this dashboard does not change device configurations.")
+    st.write("- AI analysis is not enabled in this build yet.")
+
+st.markdown("---")
+st.caption("NetSecureOps | Review every recommendation before changing network configurations.")
+

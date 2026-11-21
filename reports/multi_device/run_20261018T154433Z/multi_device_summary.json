@@ -1,0 +1,31 @@
+{
+  "tool": "NetSecureOps Multi-Device Audit",
+  "version": "1.0.0",
+  "run_time_utc": "2026-10-18T15:44:33.741840+00:00",
+  "devices_requested": 1,
+  "devices_successful": 1,
+  "devices_failed": 0,
+  "highest_risk_device": "packet_tracer_router",
+  "devices": [
+    {
+      "device": "packet_tracer_router",
+      "source_config": "/home/osama/NetSecureOps/samples/packet_tracer_router.txt",
+      "status": "success",
+      "report_path": "/home/osama/NetSecureOps/reports/multi_device/run_20261018T154433Z/packet_tracer_router/audit_report.json",
+      "risk_score": 26,
+      "risk_label": "Medium",
+      "findings_count": 16,
+      "severity_counts": {
+        "High": 1,
+        "Medium": 3,
+        "Low": 7,
+        "Info": 5
+      }
+    }
+  ],
+  "limitations": [
+    "Audits saved configuration files only; no live device connection is made.",
+    "Risk scores are project heuristics, not CVSS scores.",
+    "Validate findings against device model, IOS features and intended network policy."
+  ]
+}

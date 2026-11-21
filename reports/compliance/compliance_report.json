@@ -1,0 +1,429 @@
+{
+  "tool": "NetSecureOps",
+  "module": "Project-defined Compliance Mapping",
+  "mapping_notice": "This is a project-defined control mapping, not an official compliance certification or a claim of conformance to an external framework.",
+  "source_config": "uploads/router_running_config_4.txt",
+  "audit_id": "20261119T072332636305Z",
+  "summary": {
+    "total_controls": 21,
+    "pass": 0,
+    "fail": 18,
+    "not_assessed": 3,
+    "assessment_coverage_percent": 85.71,
+    "pass_rate_percent_of_assessed": 0.0
+  },
+  "controls": [
+    {
+      "control_id": "NSO-AUTH-01",
+      "domain": "Authentication",
+      "title": "Privileged access secret",
+      "description": "An enable secret is configured where local privileged authentication is used.",
+      "rule_ids": [
+        "AUTH-001"
+      ],
+      "status": "FAIL",
+      "evidence": [
+        {
+          "rule_id": "AUTH-001",
+          "title": "Enable secret not found",
+          "severity": "High",
+          "evidence": "No enable secret command was found in global configuration.",
+          "recommendation": "Configure an approved strong enable secret if privileged EXEC access uses local credentials."
+        }
+      ]
+    },
+    {
+      "control_id": "NSO-AUTH-02",
+      "domain": "Authentication",
+      "title": "Legacy enable password",
+      "description": "Legacy enable password syntax is not present.",
+      "rule_ids": [
+        "AUTH-002"
+      ],
+      "status": "FAIL",
+      "evidence": [
+        {
+          "rule_id": "AUTH-002",
+          "title": "Legacy enable password command present",
+          "severity": "Medium",
+          "evidence": "An enable password command exists.",
+          "recommendation": "Prefer enable secret and safely remove the legacy password after validating access."
+        }
+      ]
+    },
+    {
+      "control_id": "NSO-AUTH-03",
+      "domain": "Authentication",
+      "title": "Password obfuscation setting",
+      "description": "The configuration includes service password-encryption; this is weak obfuscation, not strong encryption.",
+      "rule_ids": [
+        "AUTH-003"
+      ],
+      "status": "FAIL",
+      "evidence": [
+        {
+          "rule_id": "AUTH-003",
+          "title": "Password obfuscation service not enabled",
+          "severity": "Low",
+          "evidence": "service password-encryption was not found.",
+          "recommendation": "Review credential exposure. This command is weak obfuscation, not strong encryption."
+        }
+      ]
+    },
+    {
+      "control_id": "NSO-AUTH-04",
+      "domain": "Authentication",
+      "title": "Protected local username",
+      "description": "A local username using secret syntax is detected.",
+      "rule_ids": [
+        "AUTH-004",
+        "AUTH-005"
+      ],
+      "status": "FAIL",
+      "evidence": [
+        {
+          "rule_id": "AUTH-004",
+          "title": "No local username using secret syntax detected",
+          "severity": "Medium",
+          "evidence": "No local username ... secret command was found.",
+          "recommendation": "Verify the AAA design; configure protected local credentials if local authentication is required."
+        }
+      ]
+    },
+    {
+      "control_id": "NSO-AUTH-05",
+      "domain": "Authentication",
+      "title": "AAA configuration",
+      "description": "AAA new-model is explicitly configured where appropriate.",
+      "rule_ids": [
+        "AUTH-006"
+      ],
+      "status": "FAIL",
+      "evidence": [
+        {
+          "rule_id": "AUTH-006",
+          "title": "AAA new-model not detected",
+          "severity": "Low",
+          "evidence": "aaa new-model was not found.",
+          "recommendation": "Assess centralized AAA (for example TACACS+ or RADIUS) for managed environments; local-only designs may be intentional."
+        }
+      ]
+    },
+    {
+      "control_id": "NSO-AUTH-06",
+      "domain": "Authentication",
+      "title": "Login failure throttling",
+      "description": "Login failure blocking is configured where supported and appropriate.",
+      "rule_ids": [
+        "AUTH-007"
+      ],
+      "status": "FAIL",
+      "evidence": [
+        {
+          "rule_id": "AUTH-007",
+          "title": "Login failure throttling not detected",
+          "severity": "Low",
+          "evidence": "No login block-for command was found.",
+          "recommendation": "Where supported, configure login failure blocking based on operational policy."
+        }
+      ]
+    },
+    {
+      "control_id": "NSO-MGMT-01",
+      "domain": "Management Plane",
+      "title": "SSH version 2",
+      "description": "SSH version 2 is explicitly configured.",
+      "rule_ids": [
+        "MGMT-001"
+      ],
+      "status": "FAIL",
+      "evidence": [
+        {
+          "rule_id": "MGMT-001",
+          "title": "SSH version 2 not explicitly configured",
+          "severity": "Medium",
+          "evidence": "ip ssh version 2 was not found.",
+          "recommendation": "If supported, explicitly require SSH version 2 and validate client compatibility."
+        }
+      ]
+    },
+    {
+      "control_id": "NSO-MGMT-02",
+      "domain": "Management Plane",
+      "title": "HTTP management service",
+      "description": "Clear-text HTTP management is not enabled unless explicitly required.",
+      "rule_ids": [
+        "MGMT-006"
+      ],
+      "status": "NOT ASSESSED",
+      "evidence": []
+    },
+    {
+      "control_id": "NSO-MGMT-03",
+      "domain": "Management Plane",
+      "title": "VTY management access",
+      "description": "VTY sections and their authentication, transport and idle-timeout policies are reviewed.",
+      "rule_ids": [
+        "MGMT-002",
+        "MGMT-003",
+        "MGMT-004",
+        "MGMT-005",
+        "MGMT-009"
+      ],
+      "status": "FAIL",
+      "evidence": [
+        {
+          "rule_id": "MGMT-003",
+          "title": "Telnet permitted on VTY lines",
+          "severity": "High",
+          "evidence": "line vty 0 4: transport input permits Telnet.",
+          "recommendation": "Restrict management to SSH where supported; validate remote access before applying changes."
+        },
+        {
+          "rule_id": "MGMT-005",
+          "title": "VTY idle timeout not detected",
+          "severity": "Low",
+          "evidence": "No exec-timeout command found in line vty 0 4.",
+          "recommendation": "Set an idle timeout appropriate to the security policy."
+        },
+        {
+          "rule_id": "MGMT-009",
+          "title": "VTY login method not explicit",
+          "severity": "Medium",
+          "evidence": "No login/login local command found in line vty 0 4.",
+          "recommendation": "Confirm an intended authentication method is configured for remote access."
+        }
+      ]
+    },
+    {
+      "control_id": "NSO-LOG-01",
+      "domain": "Logging and Time",
+      "title": "Log timestamps",
+      "description": "Log timestamps are explicitly configured.",
+      "rule_ids": [
+        "LOG-001"
+      ],
+      "status": "FAIL",
+      "evidence": [
+        {
+          "rule_id": "LOG-001",
+          "title": "Log timestamps not explicitly configured",
+          "severity": "Low",
+          "evidence": "No service timestamps log datetime command was found.",
+          "recommendation": "Enable useful timestamps for event correlation where supported."
+        }
+      ]
+    },
+    {
+      "control_id": "NSO-LOG-02",
+      "domain": "Logging and Time",
+      "title": "Central syslog destination",
+      "description": "A remote syslog destination is configured and separately verified as reachable.",
+      "rule_ids": [
+        "LOG-002"
+      ],
+      "status": "FAIL",
+      "evidence": [
+        {
+          "rule_id": "LOG-002",
+          "title": "Remote syslog destination not detected",
+          "severity": "Medium",
+          "evidence": "No logging host/IP command was found.",
+          "recommendation": "Consider sending logs to a protected central syslog/SIEM service; verify reachability and access controls."
+        }
+      ]
+    },
+    {
+      "control_id": "NSO-TIME-01",
+      "domain": "Logging and Time",
+      "title": "Time synchronization",
+      "description": "An NTP server is configured and separately verified as reachable.",
+      "rule_ids": [
+        "TIME-001"
+      ],
+      "status": "FAIL",
+      "evidence": [
+        {
+          "rule_id": "TIME-001",
+          "title": "NTP server not detected",
+          "severity": "Low",
+          "evidence": "No ntp server command was found.",
+          "recommendation": "Configure approved time sources so logs can be correlated across devices."
+        }
+      ]
+    },
+    {
+      "control_id": "NSO-SVC-01",
+      "domain": "Network Services",
+      "title": "SNMP community strings",
+      "description": "Legacy SNMP community strings are reviewed and, where possible, replaced with SNMPv3.",
+      "rule_ids": [
+        "SVC-001",
+        "SVC-002"
+      ],
+      "status": "NOT ASSESSED",
+      "evidence": []
+    },
+    {
+      "control_id": "NSO-NET-01",
+      "domain": "Network Security",
+      "title": "Source-routing protection",
+      "description": "Source routing is explicitly disabled.",
+      "rule_ids": [
+        "NET-001",
+        "NET-002"
+      ],
+      "status": "FAIL",
+      "evidence": [
+        {
+          "rule_id": "NET-002",
+          "title": "Source-routing protection not explicit",
+          "severity": "Info",
+          "evidence": "no ip source-route was not found.",
+          "recommendation": "Confirm the platform default and explicitly disable source routing if supported by policy."
+        }
+      ]
+    },
+    {
+      "control_id": "NSO-NET-02",
+      "domain": "Network Security",
+      "title": "Directed broadcast protection",
+      "description": "IP directed broadcasts are not enabled.",
+      "rule_ids": [
+        "NET-003"
+      ],
+      "status": "NOT ASSESSED",
+      "evidence": []
+    },
+    {
+      "control_id": "NSO-ACL-01",
+      "domain": "Access Control",
+      "title": "IPv4 ACL policy",
+      "description": "ACL definitions and their placement are reviewed against the approved network design.",
+      "rule_ids": [
+        "ACL-001",
+        "ACL-002"
+      ],
+      "status": "FAIL",
+      "evidence": [
+        {
+          "rule_id": "ACL-001",
+          "title": "No IPv4 ACL definitions detected",
+          "severity": "Info",
+          "evidence": "No numbered or named IPv4 ACL definition was found.",
+          "recommendation": "If filtering is part of the design, verify ACLs are defined and applied in the correct direction; absence may be intentional."
+        }
+      ]
+    },
+    {
+      "control_id": "NSO-VLAN-01",
+      "domain": "Layer 2 Security",
+      "title": "Access-port VLAN assignment",
+      "description": "Access ports are not explicitly assigned to VLAN 1 where a dedicated VLAN is required.",
+      "rule_ids": [
+        "VLAN-001"
+      ],
+      "status": "FAIL",
+      "evidence": [
+        {
+          "rule_id": "VLAN-001",
+          "title": "Access port assigned to VLAN 1",
+          "severity": "Medium",
+          "evidence": "GigabitEthernet0/0 is an access port explicitly assigned to VLAN 1.",
+          "recommendation": "Move the endpoint to an approved access VLAN if appropriate for the topology."
+        }
+      ]
+    },
+    {
+      "control_id": "NSO-VLAN-02",
+      "domain": "Layer 2 Security",
+      "title": "Trunk VLAN restrictions",
+      "description": "Trunks have an explicit allowed-VLAN list that is limited to required VLANs.",
+      "rule_ids": [
+        "VLAN-002",
+        "VLAN-003"
+      ],
+      "status": "FAIL",
+      "evidence": [
+        {
+          "rule_id": "VLAN-002",
+          "title": "Trunk allowed-VLAN list not explicit",
+          "severity": "Medium",
+          "evidence": "GigabitEthernet0/1 is a trunk without an explicit allowed-VLAN line.",
+          "recommendation": "Define only required VLANs after verifying both ends of the trunk."
+        }
+      ]
+    },
+    {
+      "control_id": "NSO-VLAN-03",
+      "domain": "Layer 2 Security",
+      "title": "Trunk negotiation",
+      "description": "Trunk negotiation is reviewed and disabled where appropriate and supported.",
+      "rule_ids": [
+        "VLAN-004"
+      ],
+      "status": "FAIL",
+      "evidence": [
+        {
+          "rule_id": "VLAN-004",
+          "title": "Trunk negotiation hardening not detected",
+          "severity": "Info",
+          "evidence": "GigabitEthernet0/1 is a trunk without switchport nonegotiate.",
+          "recommendation": "Where supported and appropriate, disable DTP negotiation on statically configured trunks."
+        }
+      ]
+    },
+    {
+      "control_id": "NSO-PORT-01",
+      "domain": "Layer 2 Security",
+      "title": "Access-port security",
+      "description": "Port security is reviewed for access ports where supported and appropriate.",
+      "rule_ids": [
+        "PORT-001"
+      ],
+      "status": "FAIL",
+      "evidence": [
+        {
+          "rule_id": "PORT-001",
+          "title": "Access port security not detected",
+          "severity": "Low",
+          "evidence": "GigabitEthernet0/0 is an access port without port-security.",
+          "recommendation": "Assess platform support and endpoint needs before enabling port security."
+        }
+      ]
+    },
+    {
+      "control_id": "NSO-STP-01",
+      "domain": "Layer 2 Security",
+      "title": "Edge-port protections",
+      "description": "PortFast and BPDU Guard are reviewed for genuine endpoint-facing ports.",
+      "rule_ids": [
+        "STP-001",
+        "STP-002"
+      ],
+      "status": "FAIL",
+      "evidence": [
+        {
+          "rule_id": "STP-001",
+          "title": "Access port PortFast not detected",
+          "severity": "Info",
+          "evidence": "GigabitEthernet0/0 is an access port without spanning-tree portfast.",
+          "recommendation": "Review edge-port design; configure PortFast only on genuine endpoint-facing ports."
+        },
+        {
+          "rule_id": "STP-002",
+          "title": "Access port BPDU Guard not detected",
+          "severity": "Low",
+          "evidence": "GigabitEthernet0/0 is an access port without BPDU Guard.",
+          "recommendation": "Consider BPDU Guard on edge ports to protect against unexpected spanning-tree BPDUs."
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "The current auditor primarily emits findings and does not provide complete pass evidence.",
+    "A missing finding is not treated as proof that a control passed.",
+    "Static configuration analysis does not verify live reachability, device state, or operational effectiveness.",
+    "Controls may be platform-, topology-, or policy-dependent and require human review."
+  ]
+}

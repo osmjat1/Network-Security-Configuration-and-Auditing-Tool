@@ -1,0 +1,182 @@
+{
+  "tool": "NetSecureOps Remediation Verification Engine",
+  "version": "1.0.0",
+  "generated_at_utc": "2026-10-24T08:34:27.031759+00:00",
+  "before_source_config": "packet_tracer_router.txt",
+  "after_source_config": "packet_tracer_router.txt",
+  "before_audit_time_utc": "2026-10-23T12:25:06.414197+00:00",
+  "after_audit_time_utc": "2026-10-23T12:25:06.414197+00:00",
+  "before_risk_score": 26,
+  "after_risk_score": 26,
+  "risk_score_delta": 0,
+  "before_findings_count": 16,
+  "after_findings_count": 16,
+  "status_counts": {
+    "Resolved \u2014 Verified": 0,
+    "Still Present": 15,
+    "New Finding": 0,
+    "Needs Verification": 0
+  },
+  "operator_verified_rule_ids": [],
+  "results": [
+    {
+      "status": "Still Present",
+      "rule_id": "AUTH-001",
+      "title": "Enable secret not found",
+      "severity": "High",
+      "target": "",
+      "before_evidence": "No enable secret command was found in global configuration.",
+      "after_evidence": "No enable secret command was found in global configuration.",
+      "verification_note": "The matching finding remains in the after-report."
+    },
+    {
+      "status": "Still Present",
+      "rule_id": "AUTH-004",
+      "title": "No local username using secret syntax detected",
+      "severity": "Medium",
+      "target": "",
+      "before_evidence": "No local username ... secret command was found.",
+      "after_evidence": "No local username ... secret command was found.",
+      "verification_note": "The matching finding remains in the after-report."
+    },
+    {
+      "status": "Still Present",
+      "rule_id": "LOG-002",
+      "title": "Remote syslog destination not detected",
+      "severity": "Medium",
+      "target": "",
+      "before_evidence": "No logging host/IP command was found.",
+      "after_evidence": "No logging host/IP command was found.",
+      "verification_note": "The matching finding remains in the after-report."
+    },
+    {
+      "status": "Still Present",
+      "rule_id": "MGMT-001",
+      "title": "SSH version 2 not explicitly configured",
+      "severity": "Medium",
+      "target": "",
+      "before_evidence": "ip ssh version 2 was not found.",
+      "after_evidence": "ip ssh version 2 was not found.",
+      "verification_note": "The matching finding remains in the after-report."
+    },
+    {
+      "status": "Still Present",
+      "rule_id": "AUTH-003",
+      "title": "Password obfuscation service not enabled",
+      "severity": "Low",
+      "target": "",
+      "before_evidence": "service password-encryption was not found.",
+      "after_evidence": "service password-encryption was not found.",
+      "verification_note": "The matching finding remains in the after-report."
+    },
+    {
+      "status": "Still Present",
+      "rule_id": "AUTH-006",
+      "title": "AAA new-model not detected",
+      "severity": "Low",
+      "target": "",
+      "before_evidence": "aaa new-model was not found.",
+      "after_evidence": "aaa new-model was not found.",
+      "verification_note": "The matching finding remains in the after-report."
+    },
+    {
+      "status": "Still Present",
+      "rule_id": "AUTH-007",
+      "title": "Login failure throttling not detected",
+      "severity": "Low",
+      "target": "",
+      "before_evidence": "No login block-for command was found.",
+      "after_evidence": "No login block-for command was found.",
+      "verification_note": "The matching finding remains in the after-report."
+    },
+    {
+      "status": "Still Present",
+      "rule_id": "LOG-001",
+      "title": "Log timestamps not explicitly configured",
+      "severity": "Low",
+      "target": "",
+      "before_evidence": "No service timestamps log datetime command was found.",
+      "after_evidence": "No service timestamps log datetime command was found.",
+      "verification_note": "The matching finding remains in the after-report."
+    },
+    {
+      "status": "Still Present",
+      "rule_id": "MGMT-004",
+      "title": "VTY transport policy not explicit",
+      "severity": "Low",
+      "target": "",
+      "before_evidence": "No transport input command found in line vty 0 4.",
+      "after_evidence": "No transport input command found in line vty 0 4.",
+      "verification_note": "The matching finding remains in the after-report."
+    },
+    {
+      "status": "Still Present",
+      "rule_id": "MGMT-005",
+      "title": "VTY idle timeout not detected",
+      "severity": "Low",
+      "target": "",
+      "before_evidence": "No exec-timeout command found in line vty 0 4.",
+      "after_evidence": "No exec-timeout command found in line vty 0 4.",
+      "verification_note": "The matching finding remains in the after-report."
+    },
+    {
+      "status": "Still Present",
+      "rule_id": "TIME-001",
+      "title": "NTP server not detected",
+      "severity": "Low",
+      "target": "",
+      "before_evidence": "No ntp server command was found.",
+      "after_evidence": "No ntp server command was found.",
+      "verification_note": "The matching finding remains in the after-report."
+    },
+    {
+      "status": "Still Present",
+      "rule_id": "ACL-001",
+      "title": "No IPv4 ACL definitions detected",
+      "severity": "Info",
+      "target": "",
+      "before_evidence": "No numbered or named IPv4 ACL definition was found.",
+      "after_evidence": "No numbered or named IPv4 ACL definition was found.",
+      "verification_note": "The matching finding remains in the after-report."
+    },
+    {
+      "status": "Still Present",
+      "rule_id": "ACL-002",
+      "title": "Routed interface has no interface ACL detected",
+      "severity": "Info",
+      "target": "",
+      "before_evidence": "FastEthernet0/0.10 has an IP address but no ip access-group command was detected in the interface block.",
+      "after_evidence": "FastEthernet0/0.10 has an IP address but no ip access-group command was detected in the interface block.",
+      "verification_note": "The matching finding remains in the after-report."
+    },
+    {
+      "status": "Still Present",
+      "rule_id": "MGMT-008",
+      "title": "Login or MOTD banner not detected",
+      "severity": "Info",
+      "target": "",
+      "before_evidence": "No login, motd, or exec banner was found.",
+      "after_evidence": "No login, motd, or exec banner was found.",
+      "verification_note": "The matching finding remains in the after-report."
+    },
+    {
+      "status": "Still Present",
+      "rule_id": "NET-002",
+      "title": "Source-routing protection not explicit",
+      "severity": "Info",
+      "target": "",
+      "before_evidence": "no ip source-route was not found.",
+      "after_evidence": "no ip source-route was not found.",
+      "verification_note": "The matching finding remains in the after-report."
+    }
+  ],
+  "limitations": [
+    "Static configuration findings do not establish live device state.",
+    "A missing finding is not proof of remediation unless independently checked.",
+    "Operator verification is an attestation, not independent technical proof.",
+    "Finding identity uses rule ID, target/interface, and title or evidence.",
+    "Duplicate finding identities are treated as ambiguous.",
+    "Risk scores are heuristic and are not proof of security.",
+    "This module does not connect to or change network devices."
+  ]
+}

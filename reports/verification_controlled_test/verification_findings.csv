@@ -1,0 +1,16 @@
+status,rule_id,title,severity,target,before_evidence,after_evidence,verification_note
+Still Present,AUTH-001,Enable secret not found,High,,No enable secret command was found in global configuration.,No enable secret command was found in global configuration.,The matching finding remains in the after-report.
+Still Present,AUTH-004,No local username using secret syntax detected,Medium,,No local username ... secret command was found.,No local username ... secret command was found.,The matching finding remains in the after-report.
+Needs Verification,LOG-002,Remote syslog destination not detected,Medium,,No logging host/IP command was found.,,"Finding is absent from the after-report, but independent verification was not recorded."
+Still Present,MGMT-001,SSH version 2 not explicitly configured,Medium,,ip ssh version 2 was not found.,ip ssh version 2 was not found.,The matching finding remains in the after-report.
+Needs Verification,AUTH-003,Password obfuscation service not enabled,Low,,service password-encryption was not found.,,"Finding is absent from the after-report, but independent verification was not recorded."
+Needs Verification,AUTH-006,AAA new-model not detected,Low,,aaa new-model was not found.,,"Finding is absent from the after-report, but independent verification was not recorded."
+Needs Verification,AUTH-007,Login failure throttling not detected,Low,,No login block-for command was found.,,"Finding is absent from the after-report, but independent verification was not recorded."
+Needs Verification,LOG-001,Log timestamps not explicitly configured,Low,,No service timestamps log datetime command was found.,,"Finding is absent from the after-report, but independent verification was not recorded."
+Still Present,MGMT-004,VTY transport policy not explicit,Low,,No transport input command found in line vty 0 4.,No transport input command found in line vty 0 4.,The matching finding remains in the after-report.
+Still Present,MGMT-005,VTY idle timeout not detected,Low,,No exec-timeout command found in line vty 0 4.,No exec-timeout command found in line vty 0 4.,The matching finding remains in the after-report.
+Needs Verification,TIME-001,NTP server not detected,Low,,No ntp server command was found.,,"Finding is absent from the after-report, but independent verification was not recorded."
+Still Present,ACL-001,No IPv4 ACL definitions detected,Info,,No numbered or named IPv4 ACL definition was found.,No numbered or named IPv4 ACL definition was found.,The matching finding remains in the after-report.
+Still Present,ACL-002,Routed interface has no interface ACL detected,Info,,FastEthernet0/0.10 has an IP address but no ip access-group command was detected in the interface block.,FastEthernet0/0.10 has an IP address but no ip access-group command was detected in the interface block.,The matching finding remains in the after-report.
+Needs Verification,MGMT-008,Login or MOTD banner not detected,Info,,"No login, motd, or exec banner was found.",,"Finding is absent from the after-report, but independent verification was not recorded."
+Needs Verification,NET-002,Source-routing protection not explicit,Info,,no ip source-route was not found.,,"Finding is absent from the after-report, but independent verification was not recorded."

@@ -1,0 +1,328 @@
+#!/usr/bin/env python3
+"""NetSecureOps advanced offline Cisco IOS configuration auditor.
+
+This tool performs static checks against saved configuration text. It does not
+connect to devices or automatically apply remediation commands.
+"""
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+import re
+import sys
+from collections import Counter
+from datetime import datetime, timezone
+from pathlib import Path
+
+TOOL_VERSION = "0.2.0"
+SEVERITY_POINTS = {"Critical": 10, "High": 7, "Medium": 4, "Low": 1, "Info": 0}
+SEVERITY_ORDER = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3, "Info": 4}
+
+
+def parse_config(text: str) -> tuple[list[str], dict[str, list[str]], dict[str, list[str]]]:
+    """Parse global commands, interface blocks, and other named line blocks."""
+    global_lines: list[str] = []
+    interfaces: dict[str, list[str]] = {}
+    line_blocks: dict[str, list[str]] = {}
+    current_kind: str | None = None
+    current_name: str | None = None
+
+    for raw in text.splitlines():
+        line = raw.rstrip()
+        stripped = line.strip()
+        if not stripped or stripped.startswith("!"):
+            continue
+        match = re.match(r"^interface\s+(\S+)", stripped, re.I)
+        if match:
+            current_kind, current_name = "interface", match.group(1)
+            interfaces.setdefault(current_name, [])
+            continue
+        match = re.match(r"^line\s+(.+)$", stripped, re.I)
+        if match:
+            current_kind, current_name = "line", "line " + match.group(1)
+            line_blocks.setdefault(current_name, [])
+            continue
+        # New top-level commands start in column one. Indented lines belong to
+        # the current interface/line section; this matches common IOS show run output.
+        if line[:1].isspace() and current_kind and current_name:
+            target = interfaces if current_kind == "interface" else line_blocks
+            target[current_name].append(stripped)
+            continue
+        current_kind, current_name = None, None
+        global_lines.append(stripped)
+    return global_lines, interfaces, line_blocks
+
+
+def audit_config(text: str) -> dict:
+    """Audit configuration text and return a JSON-serializable report."""
+    global_lines, interfaces, line_blocks = parse_config(text)
+    lower_globals = [x.lower() for x in global_lines]
+    findings: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+
+    def has(pattern: str) -> bool:
+        return any(re.search(pattern, line, re.I) for line in global_lines)
+
+    def add(rule_id: str, title: str, severity: str, evidence: str,
+            recommendation: str, category: str, remediation: str | None = None,
+            confidence: str = "Medium", reference: str = "NetSecureOps project rule") -> None:
+        key = (rule_id, evidence)
+        if key in seen:
+            return
+        seen.add(key)
+        findings.append({
+            "rule_id": rule_id, "title": title, "severity": severity,
+            "category": category, "evidence": evidence,
+            "recommendation": recommendation,
+            "remediation_example": remediation or "Review the recommendation and validate it against the approved network design before making changes.",
+            "confidence": confidence, "reference": reference,
+        })
+
+    # Authentication and credential controls
+    if not has(r"^enable secret(?:\s|$)"):
+        add("AUTH-001", "Enable secret not found", "High", "No enable secret command was found in global configuration.",
+            "Configure an approved strong enable secret if privileged EXEC access uses local credentials.", "Authentication",
+            "enable secret <STRONG_SECRET>", "High")
+    if has(r"^enable password(?:\s|$)"):
+        add("AUTH-002", "Legacy enable password command present", "Medium", "An enable password command exists.",
+            "Prefer enable secret and safely remove the legacy password after validating access.", "Authentication",
+            "no enable password", "High")
+    if not has(r"^service password-encryption$"):
+        add("AUTH-003", "Password obfuscation service not enabled", "Low", "service password-encryption was not found.",
+            "Review credential exposure. This command is weak obfuscation, not strong encryption.", "Authentication",
+            "service password-encryption", "High")
+    if not has(r"^username\s+\S+\s+.*\bsecret\b"):
+        add("AUTH-004", "No local username using secret syntax detected", "Medium", "No local username ... secret command was found.",
+            "Verify the AAA design; configure protected local credentials if local authentication is required.", "Authentication",
+            "username <ADMIN> privilege 15 secret <STRONG_SECRET>", "Medium")
+    if has(r"^username\s+\S+\s+.*\bpassword\b") and not has(r"^username\s+\S+\s+.*\bsecret\b"):
+        add("AUTH-005", "Local username appears to use password syntax", "High", "A username password command exists and no username secret command was detected.",
+            "Use supported secret syntax and follow the platform's credential policy.", "Authentication",
+            "username <ADMIN> privilege 15 secret <STRONG_SECRET>", "Medium")
+    if not has(r"^aaa new-model$"):
+        add("AUTH-006", "AAA new-model not detected", "Low", "aaa new-model was not found.",
+            "Assess centralized AAA (for example TACACS+ or RADIUS) for managed environments; local-only designs may be intentional.", "Authentication",
+            "aaa new-model", "Medium")
+    if not has(r"^login\s+block-for\s+\d+\s+attempts\s+\d+\s+within\s+\d+"):
+        add("AUTH-007", "Login failure throttling not detected", "Low", "No login block-for command was found.",
+            "Where supported, configure login failure blocking based on operational policy.", "Authentication",
+            "login block-for 120 attempts 3 within 60", "Medium")
+
+    # Secure management plane
+    if not has(r"^ip ssh version 2$"):
+        add("MGMT-001", "SSH version 2 not explicitly configured", "Medium", "ip ssh version 2 was not found.",
+            "If supported, explicitly require SSH version 2 and validate client compatibility.", "Management",
+            "ip ssh version 2", "High")
+    if has(r"^ip http server$"):
+        add("MGMT-006", "HTTP management server enabled", "High", "ip http server is configured.",
+            "Disable the clear-text HTTP server if not explicitly required; confirm management dependencies first.", "Management",
+            "no ip http server", "High")
+    if has(r"^ip http secure-server$"):
+        add("MGMT-007", "HTTPS management server enabled", "Info", "ip http secure-server is configured.",
+            "Confirm this service is required, restricted by ACL, and uses supported TLS settings.", "Management",
+            "! If not required: no ip http secure-server", "High")
+    if not has(r"^service timestamps log datetime(?:\s|$)"):
+        add("LOG-001", "Log timestamps not explicitly configured", "Low", "No service timestamps log datetime command was found.",
+            "Enable useful timestamps for event correlation where supported.", "Logging",
+            "service timestamps log datetime msec localtime show-timezone", "Medium")
+    if not has(r"^logging\s+(host|\d{1,3}(?:\.\d{1,3}){3})\b"):
+        add("LOG-002", "Remote syslog destination not detected", "Medium", "No logging host/IP command was found.",
+            "Consider sending logs to a protected central syslog/SIEM service; verify reachability and access controls.", "Logging",
+            "logging host <SYSLOG_SERVER_IP>", "Medium")
+    if not has(r"^ntp server\s+"):
+        add("TIME-001", "NTP server not detected", "Low", "No ntp server command was found.",
+            "Configure approved time sources so logs can be correlated across devices.", "Time Synchronization",
+            "ntp server <TRUSTED_NTP_SERVER>", "Medium")
+    if not has(r"^banner\s+(motd|login|exec)\b"):
+        add("MGMT-008", "Login or MOTD banner not detected", "Info", "No login, motd, or exec banner was found.",
+            "Use an organization-approved access warning banner where policy or law requires it.", "Management",
+            "banner motd ^CUnauthorized access prohibited.^C", "Low")
+
+    vty_sections = [(name, [x.lower() for x in lines]) for name, lines in line_blocks.items() if name.startswith("line vty")]
+    if not vty_sections:
+        add("MGMT-002", "VTY management lines not found", "Info", "No line vty section was detected.",
+            "Confirm this is a complete configuration and review remote-management access.", "Management", confidence="Low")
+    for section, block in vty_sections:
+        transports = [x for x in block if re.search(r"^transport input\s+", x)]
+        if any(re.search(r"\btelnet\b", x) for x in transports):
+            add("MGMT-003", "Telnet permitted on VTY lines", "High", f"{section}: transport input permits Telnet.",
+                "Restrict management to SSH where supported; validate remote access before applying changes.", "Management",
+                "line vty <RANGE>\n transport input ssh", "High")
+        if not transports:
+            add("MGMT-004", "VTY transport policy not explicit", "Low", f"No transport input command found in {section}.",
+                "Review platform defaults and explicitly restrict management transports.", "Management",
+                "line vty <RANGE>\n transport input ssh", "Medium")
+        if not any(re.search(r"^exec-timeout\s+\d+\s+\d+", x) for x in block):
+            add("MGMT-005", "VTY idle timeout not detected", "Low", f"No exec-timeout command found in {section}.",
+                "Set an idle timeout appropriate to the security policy.", "Management",
+                "line vty <RANGE>\n exec-timeout 5 0", "High")
+        if not any(re.match(r"^login(?:\s|$)", x) for x in block):
+            add("MGMT-009", "VTY login method not explicit", "Medium", f"No login/login local command found in {section}.",
+                "Confirm an intended authentication method is configured for remote access.", "Management",
+                "line vty <RANGE>\n login local", "Medium")
+
+    # Network services / discovery
+    if has(r"^snmp-server\s+community\s+\S+\s+(ro|rw)\b"):
+        add("SVC-001", "SNMP community string configured", "High", "An SNMP community string is configured in the clear-text configuration.",
+            "Prefer SNMPv3 with authentication/privacy where supported; restrict management-plane reachability and protect backups.", "Services",
+            "! Migrate to SNMPv3 using platform-specific commands", "High")
+    if has(r"^snmp-server\s+community\s+\S+\s+rw\b"):
+        add("SVC-002", "SNMP read-write community detected", "Critical", "An SNMP read-write community is configured.",
+            "Remove or tightly restrict read-write community access; migrate to SNMPv3 where possible.", "Services",
+            "! Remove only after confirming monitoring dependencies", "High")
+    if has(r"^ip http server$") and has(r"^ip http secure-server$"):
+        add("SVC-003", "HTTP and HTTPS management services both enabled", "Medium", "Both HTTP and HTTPS management server commands are present.",
+            "Disable clear-text HTTP if not required and restrict remaining management access.", "Services", "no ip http server", "High")
+    if has(r"^cdp run$"):
+        add("SVC-004", "CDP globally enabled", "Info", "cdp run is configured.",
+            "Review whether CDP is needed beyond trusted infrastructure links; disable per interface where appropriate.", "Services",
+            "! Consider no cdp enable on untrusted-facing interfaces", "Low")
+
+    # Routing, ACLs and network protections
+    if has(r"^ip source-route$"):
+        add("NET-001", "IP source routing enabled", "High", "ip source-route is configured.",
+            "Disable source routing unless a documented requirement exists.", "Network Security", "no ip source-route", "High")
+    if not has(r"^no ip source-route$"):
+        add("NET-002", "Source-routing protection not explicit", "Info", "no ip source-route was not found.",
+            "Confirm the platform default and explicitly disable source routing if supported by policy.", "Network Security", "no ip source-route", "Low")
+    if has(r"^ip directed-broadcast$"):
+        add("NET-003", "IP directed broadcasts enabled", "High", "ip directed-broadcast is configured.",
+            "Disable directed broadcasts unless a documented requirement exists.", "Network Security", "no ip directed-broadcast", "High")
+    if not has(r"^no ip http server$") and not has(r"^ip http server$"):
+        # Informational absence is not treated as a failure; avoid inferring defaults.
+        pass
+    if not any(re.match(r"^access-list\s+\d+\b|^ip access-list\s+(standard|extended)\b", x, re.I) for x in global_lines):
+        add("ACL-001", "No IPv4 ACL definitions detected", "Info", "No numbered or named IPv4 ACL definition was found.",
+            "If filtering is part of the design, verify ACLs are defined and applied in the correct direction; absence may be intentional.", "Access Control",
+            "! Define ACLs only from the approved network policy", "Low")
+    if has(r"^ip redirects$"):
+        add("NET-004", "IP redirects explicitly enabled", "Low", "ip redirects is configured globally or in parsed global commands.",
+            "Review whether redirects are needed; disable on interfaces where policy requires it.", "Network Security", "no ip redirects", "Medium")
+
+    # Interface-level Layer 2 / Layer 3 checks
+    for interface, lines in interfaces.items():
+        low = [x.lower() for x in lines]
+        is_access = any(re.match(r"^switchport mode access$", x) for x in low)
+        is_trunk = any(re.match(r"^switchport mode trunk$", x) for x in low)
+        if is_access and any(re.match(r"^switchport access vlan 1$", x) for x in low):
+            add("VLAN-001", "Access port assigned to VLAN 1", "Medium", f"{interface} is an access port explicitly assigned to VLAN 1.",
+                "Move the endpoint to an approved access VLAN if appropriate for the topology.", "Layer 2",
+                f"interface {interface}\n switchport access vlan <APPROVED_VLAN>", "High")
+        if is_trunk:
+            allowed = [x for x in low if re.match(r"^switchport trunk allowed vlan(?:\s|$)", x)]
+            if not allowed:
+                add("VLAN-002", "Trunk allowed-VLAN list not explicit", "Medium", f"{interface} is a trunk without an explicit allowed-VLAN line.",
+                    "Define only required VLANs after verifying both ends of the trunk.", "Layer 2",
+                    f"interface {interface}\n switchport trunk allowed vlan <REQUIRED_VLANS>", "High")
+            elif any(re.search(r"\ballowed vlan all\b", x) for x in allowed):
+                add("VLAN-003", "Trunk allows all VLANs", "Low", f"{interface} includes switchport trunk allowed vlan all.",
+                    "Restrict trunk VLANs to those required by the network design.", "Layer 2",
+                    f"interface {interface}\n switchport trunk allowed vlan <REQUIRED_VLANS>", "High")
+            if not any(re.match(r"^switchport nonegotiate$", x) for x in low):
+                add("VLAN-004", "Trunk negotiation hardening not detected", "Info", f"{interface} is a trunk without switchport nonegotiate.",
+                    "Where supported and appropriate, disable DTP negotiation on statically configured trunks.", "Layer 2",
+                    f"interface {interface}\n switchport nonegotiate", "Low")
+        if is_access and not any(re.match(r"^switchport port-security$", x) for x in low):
+            add("PORT-001", "Access port security not detected", "Low", f"{interface} is an access port without port-security.",
+                "Assess platform support and endpoint needs before enabling port security.", "Layer 2",
+                f"interface {interface}\n switchport port-security", "Medium")
+        if is_access and not any(re.match(r"^spanning-tree portfast$", x) for x in low):
+            add("STP-001", "Access port PortFast not detected", "Info", f"{interface} is an access port without spanning-tree portfast.",
+                "Review edge-port design; configure PortFast only on genuine endpoint-facing ports.", "Layer 2",
+                f"interface {interface}\n spanning-tree portfast", "Low")
+        if is_access and not any(re.match(r"^spanning-tree bpduguard enable$", x) for x in low):
+            add("STP-002", "Access port BPDU Guard not detected", "Low", f"{interface} is an access port without BPDU Guard.",
+                "Consider BPDU Guard on edge ports to protect against unexpected spanning-tree BPDUs.", "Layer 2",
+                f"interface {interface}\n spanning-tree bpduguard enable", "Medium")
+        if any(re.match(r"^ip address\s+\S+\s+\S+", x) for x in low) and not any(re.match(r"^ip access-group\s+\S+\s+(in|out)$", x) for x in low):
+            add("ACL-002", "Routed interface has no interface ACL detected", "Info", f"{interface} has an IP address but no ip access-group command was detected in the interface block.",
+                "Check the intended trust boundary and firewall/routing policy; an interface ACL is not required on every interface.", "Access Control",
+                f"interface {interface}\n ip access-group <ACL_NAME> in", "Low")
+        if any(re.match(r"^shutdown$", x) for x in low):
+            pass  # Shutdown is commonly intentional; do not flag as a vulnerability.
+
+    # Normalize / sort findings for predictable reports.
+    findings.sort(key=lambda item: (SEVERITY_ORDER.get(item["severity"], 99), item["rule_id"], item["evidence"]))
+    severity_counts = Counter(item["severity"] for item in findings)
+    raw_points = sum(SEVERITY_POINTS[item["severity"]] for item in findings)
+    score = min(100, raw_points)
+    if any(x["severity"] == "Critical" for x in findings) or score >= 50:
+        label = "Critical"
+    elif score >= 30:
+        label = "High"
+    elif score >= 12:
+        label = "Medium"
+    else:
+        label = "Low"
+
+    return {
+        "tool": "NetSecureOps", "version": TOOL_VERSION,
+        "audit_time_utc": datetime.now(timezone.utc).isoformat(),
+        "analysis_mode": "offline_static_configuration_analysis",
+        "checks_run": len(findings), "risk_score": score, "risk_label": label,
+        "score_method": "Heuristic sum of finding severity points, capped at 100; not CVSS.",
+        "severity_counts": {s: severity_counts.get(s, 0) for s in ("Critical", "High", "Medium", "Low", "Info")},
+        "findings": findings,
+        "limitations": [
+            "Offline static analysis only; no device connection was made.",
+            "The tool does not automatically apply remediation commands.",
+            "A missing command is not proof of a vulnerability; defaults vary by platform and software version.",
+            "Some checks are informational and require validation against topology, device model, IOS version and approved policy.",
+            "Risk score is a project heuristic, not a formal CVSS score or compliance certification.",
+        ],
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Audit a Cisco IOS configuration file offline.")
+    parser.add_argument("config", help="Path to a saved configuration text file")
+    parser.add_argument("--out", default="reports", help="Output directory (default: reports)")
+    args = parser.parse_args()
+    source = Path(args.config)
+    if not source.is_file():
+        print(f"ERROR: Configuration file not found: {source}", file=sys.stderr)
+        return 2
+    try:
+        text = source.read_text(encoding="utf-8-sig", errors="replace")
+    except OSError as exc:
+        print(f"ERROR: Could not read configuration: {exc}", file=sys.stderr)
+        return 2
+    if "\x00" in text:
+        print("ERROR: Input appears to contain binary/NUL data, not a text configuration.", file=sys.stderr)
+        return 2
+    report = audit_config(text)
+    report["source_config"] = source.name
+    output_dir = Path(args.out)
+    try:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        json_path = output_dir / "audit_report.json"
+        csv_path = output_dir / "findings.csv"
+        json_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        columns = ["rule_id", "title", "severity", "category", "evidence", "recommendation", "remediation_example", "confidence", "reference"]
+        with csv_path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=columns)
+            writer.writeheader()
+            writer.writerows(report["findings"])
+    except OSError as exc:
+        print(f"ERROR: Could not write report: {exc}", file=sys.stderr)
+        return 2
+    print("\n=== NetSecureOps Advanced Audit Summary ===")
+    print(f"Configuration : {source}")
+    print(f"Version       : {report['version']}")
+    print(f"Risk score    : {report['risk_score']}/100 (heuristic)")
+    print(f"Risk label    : {report['risk_label']}")
+    print(f"Findings      : {len(report['findings'])}")
+    print("Severity      : " + ", ".join(f"{k}={v}" for k, v in report["severity_counts"].items()))
+    for item in report["findings"]:
+        print(f"\n[{item['severity']}] {item['rule_id']} - {item['title']} ({item['category']})")
+        print(f"  Evidence       : {item['evidence']}")
+        print(f"  Recommendation : {item['recommendation']}")
+        print(f"  Example fix    : {item['remediation_example']}")
+    print(f"\nJSON report: {json_path}\nCSV report : {csv_path}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+

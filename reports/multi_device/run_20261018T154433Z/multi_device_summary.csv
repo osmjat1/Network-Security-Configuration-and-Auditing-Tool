@@ -1,0 +1,2 @@
+device,source_config,status,risk_score,risk_label,findings_count,critical,high,medium,low,info,report_path,error
+packet_tracer_router,/home/osama/NetSecureOps/samples/packet_tracer_router.txt,success,26,Medium,16,0,1,3,7,5,/home/osama/NetSecureOps/reports/multi_device/run_20261018T154433Z/packet_tracer_router/audit_report.json,

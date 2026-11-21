@@ -1,0 +1,1190 @@
+import json
+import subprocess
+import sys
+from pathlib import Path
+from datetime import datetime, timezone
+
+import pandas as pd
+import streamlit as st
+
+ROOT = Path(__file__).resolve().parent.parent
+REPORT = ROOT / "reports" / "audit_report.json"
+DEFAULT_CONFIG = ROOT / "samples" / "router_running_config.txt"
+AUDITOR = ROOT / "src" / "auditor.py"
+MULTI_AUDITOR = ROOT / "src" / "multi_device_audit.py"
+UPLOAD_DIR = ROOT / "uploads"
+HISTORY_DIR = ROOT / "history"
+
+# Works with: streamlit run src/dashboard.py from ~/NetSecureOps
+try:
+    from src.collector import save_config
+except ModuleNotFoundError:
+    from collector import save_config
+
+st.set_page_config(
+    page_title="NetSecureOps | SOC",
+    page_icon="🛡️",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# ---------- Design system ----------
+st.markdown("""
+<style>
+.stApp { background: #0B1120; color: #E5E7EB; }
+[data-testid="stHeader"] { background: rgba(11,17,32,0.92); }
+[data-testid="stSidebar"] { background: #111827; border-right: 1px solid #263247; }
+.block-container { padding-top: 1.5rem; padding-bottom: 2rem; max-width: 1600px; }
+h1, h2, h3 { color: #F8FAFC !important; }
+p, label, .stMarkdown { color: #CBD5E1; }
+.ns-card {
+    background: linear-gradient(145deg,#172033,#111827);
+    border: 1px solid #29364B; border-radius: 14px;
+    padding: 18px 20px; min-height: 118px;
+}
+.ns-label { color: #94A3B8; font-size: 12px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 1px; }
+.ns-value { font-size: 30px; font-weight: 750; margin-top: 8px; color: #F8FAFC; }
+.ns-sub { font-size: 12px; margin-top: 5px; color: #94A3B8; }
+.ns-section { background: #111827; border: 1px solid #263247;
+    border-radius: 14px; padding: 18px; margin-bottom: 14px; }
+.ns-status { display: inline-block; padding: 5px 10px; border-radius: 7px;
+    font-size: 12px; font-weight: 750; }
+div.stButton > button { border-radius: 8px; border: 1px solid #334155;
+    min-height: 42px; font-weight: 650; }
+div.stButton > button[kind="primary"] {
+    background: #0EA5E9; border-color: #0284C7; color: white;
+}
+[data-testid="stMetric"] { background: #111827; border: 1px solid #263247;
+    padding: 14px; border-radius: 12px; }
+[data-testid="stDataFrame"] { border: 1px solid #263247; border-radius: 10px; }
+hr { border-color: #263247; }
+footer { visibility: hidden; }
+</style>
+""", unsafe_allow_html=True)
+
+SEVERITY_COLORS = {
+    "Critical": "#EF4444", "High": "#F97316", "Medium": "#EAB308",
+    "Low": "#38BDF8", "Info": "#A78BFA", "Informational": "#A78BFA",
+    "Unknown": "#94A3B8",
+}
+ALLOWED_EXTENSIONS = {".txt", ".cfg", ".conf"}
+
+
+def load_report():
+    if not REPORT.is_file():
+        return None
+    try:
+        return json.loads(REPORT.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def list_configs():
+    """Return project-local supported configs, newest uploads first."""
+    configs = []
+    if DEFAULT_CONFIG.is_file():
+        configs.append(DEFAULT_CONFIG)
+    if UPLOAD_DIR.is_dir():
+        uploads = [
+            p for p in UPLOAD_DIR.iterdir()
+            if p.is_file() and p.suffix.lower() in ALLOWED_EXTENSIONS
+        ]
+        uploads.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        configs.extend(uploads)
+    return configs
+
+
+def run_audit(config_path: Path):
+    """Run the existing offline auditor on the selected config and preserve history."""
+    config_path = Path(config_path).resolve()
+    project_root = ROOT.resolve()
+
+    try:
+        config_path.relative_to(project_root)
+    except ValueError:
+        return False, "For safety, audit only configuration files inside NetSecureOps."
+
+    if not config_path.is_file():
+        return False, "Selected configuration file was not found."
+    if config_path.suffix.lower() not in ALLOWED_EXTENSIONS:
+        return False, "Unsupported file type. Use .txt, .cfg, or .conf."
+    if not AUDITOR.is_file():
+        return False, "Auditor script was not found."
+
+    audit_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    run_dir = HISTORY_DIR / f"audit_{audit_id}"
+    run_dir.mkdir(parents=True, exist_ok=False)
+
+    try:
+        result = subprocess.run(
+            [
+                sys.executable, str(AUDITOR), str(config_path),
+                "--out", str(run_dir),
+            ],
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, f"Could not run audit: {exc}"
+
+    if result.returncode != 0:
+        details = result.stderr.strip() or result.stdout.strip() or "Audit failed."
+        return False, details
+
+    run_report_path = run_dir / "audit_report.json"
+    run_csv_path = run_dir / "findings.csv"
+    if not run_report_path.is_file():
+        return False, "Auditor did not create audit_report.json in the history folder."
+
+    try:
+        report_data = json.loads(run_report_path.read_text(encoding="utf-8"))
+        report_data["source_config"] = str(config_path.relative_to(project_root))
+        report_data["audit_id"] = audit_id
+        # Write source metadata into this audit's own report.
+        run_report_path.write_text(json.dumps(report_data, indent=2), encoding="utf-8")
+
+        REPORT.parent.mkdir(parents=True, exist_ok=True)
+        REPORT.write_text(json.dumps(report_data, indent=2), encoding="utf-8")
+
+        # Also keep a top-level CSV copy for easy browsing.
+        if run_csv_path.is_file():
+            (HISTORY_DIR / f"findings_{audit_id}.csv").write_bytes(run_csv_path.read_bytes())
+    except (OSError, json.JSONDecodeError) as exc:
+        return False, f"Audit ran, but saving the report failed: {exc}"
+
+    return True, f"Audit completed for {config_path.name}. History ID: {audit_id}"
+
+
+def card(label, value, subtitle="", color="#F8FAFC"):
+    st.markdown(
+        f"""
+        <div class="ns-card">
+          <div class="ns-label">{label}</div>
+          <div class="ns-value" style="color:{color}">{value}</div>
+          <div class="ns-sub">{subtitle}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def risk_color(score):
+    if score >= 70:
+        return "#EF4444", "CRITICAL"
+    if score >= 40:
+        return "#F97316", "HIGH"
+    if score >= 20:
+        return "#EAB308", "MODERATE"
+    return "#22C55E", "LOW"
+
+
+# ---------- Sidebar ----------
+with st.sidebar:
+    st.markdown("## 🛡️ NetSecureOps")
+    st.caption("NETWORK SECURITY OPERATIONS")
+    st.markdown("---")
+
+    page = st.radio(
+        "WORKSPACE",
+        ["Overview", "Security Findings", "AI Security Analysis", "Multi-Device Audit", "Audit Comparison", "Audit Analytics", "Security Compliance", "Phase 4: Remediation & Lab SSH", "Reports & Evidence", "About"],
+        label_visibility="visible",
+    )
+
+    st.markdown("---")
+    st.markdown("### Configuration collection")
+    st.caption("Offline saved-configuration audit")
+
+    uploaded_file = st.file_uploader(
+        "Upload router/switch config",
+        type=["txt", "cfg", "conf"],
+        help="Text configuration only; maximum size 2 MB.",
+    )
+    if uploaded_file is not None:
+        if st.button("Save uploaded configuration", use_container_width=True):
+            try:
+                saved_path = save_config(uploaded_file.name, uploaded_file.getvalue())
+                st.session_state["selected_config"] = str(saved_path)
+                st.success(f"Saved {saved_path.name}")
+                st.rerun()
+            except (ValueError, OSError) as exc:
+                st.error(f"Upload failed: {exc}")
+
+    configs = list_configs()
+    config_values = [str(p) for p in configs]
+    previous = st.session_state.get("selected_config")
+    if previous not in config_values:
+        previous = config_values[0] if config_values else ""
+
+    if config_values:
+        selected_config = st.selectbox(
+            "Configuration to audit",
+            options=config_values,
+            index=config_values.index(previous),
+            format_func=lambda value: str(Path(value).relative_to(ROOT)),
+        )
+        st.session_state["selected_config"] = selected_config
+        st.caption(f"Selected: {Path(selected_config).name}")
+    else:
+        selected_config = ""
+        st.info("Upload a configuration file to begin.")
+
+    if st.button(
+        "▶ Run Security Audit",
+        type="primary",
+        use_container_width=True,
+        disabled=not bool(selected_config),
+    ):
+        with st.spinner("Analysing selected configuration..."):
+            ok, message = run_audit(Path(selected_config))
+        if ok:
+            st.success(message)
+            st.rerun()
+        else:
+            st.error(message)
+
+    st.markdown("---")
+    st.caption("NetSecureOps • Development build")
+    st.caption("No live device telemetry is collected.")
+
+# ---------- Load audit data ----------
+report = load_report()
+
+st.markdown("# 🛡️ NetSecureOps")
+st.caption("NETWORK SECURITY CONFIGURATION AUDITING PLATFORM")
+
+# Phase 4: offline remediation preview and optional read-only SSH collection.
+if page == "Phase 4: Remediation & Lab SSH":
+    st.markdown("### Phase 4 — Remediation & Lab Integration")
+    st.caption("Offline config hardening preview plus optional read-only SSH collection from your own lab device.")
+    tab_offline, tab_ssh = st.tabs(["Offline remediation preview", "Read-only lab SSH collection"])
+
+    with tab_offline:
+        st.markdown("#### Generate a safe hardening preview")
+        st.warning("This creates a separate preview file only. It does not change the original config or apply commands to a device.")
+        configs_for_fix = list_configs()
+        if not configs_for_fix:
+            st.info("Upload a configuration from the sidebar first.")
+        else:
+            selected_fix = st.selectbox("Source configuration", configs_for_fix, format_func=lambda p: str(p.relative_to(ROOT)))
+            try:
+                original = selected_fix.read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as exc:
+                original = ""
+                st.error(f"Cannot read configuration: {exc}")
+            if original:
+                st.caption("Select only the preview additions you want to review. Validate commands against your exact IOS/IOS-XE image before use.")
+                add_password_encryption = st.checkbox("Preview: service password-encryption", value="service password-encryption" not in original.lower())
+                add_banner = st.checkbox("Preview: warning login banner", value="banner motd" not in original.lower())
+                add_no_http = st.checkbox("Preview: disable plain HTTP server", value="no ip http server" not in original.lower())
+                additions = []
+                if add_password_encryption and "service password-encryption" not in original.lower():
+                    additions.append("service password-encryption")
+                if add_banner and "banner motd" not in original.lower():
+                    additions.append('banner motd ^CAuthorized access only. Activity may be monitored.^C')
+                if add_no_http and "no ip http server" not in original.lower():
+                    additions.append("no ip http server")
+                preview = original.rstrip() + ("\n\n! NetSecureOps remediation preview — review before use\n" + "\n".join(additions) if additions else "") + "\n"
+                st.code("\n".join(additions) if additions else "No new preview commands selected or needed.", language="text")
+                st.download_button("Download separate remediation preview", data=preview, file_name=f"{selected_fix.stem}_remediation_preview.txt", mime="text/plain", disabled=not bool(additions), use_container_width=True)
+                st.info("The preview is not automatically applied. Review, back up the device configuration, and test in an isolated lab first.")
+
+    with tab_ssh:
+        st.markdown("#### Collect configuration over SSH")
+        st.warning("Requires a running lab router/switch with SSH enabled and reachable from this Ubuntu VM. Use only devices you own or are authorised to administer. Collection is read-only; no configuration commands are sent.")
+        with st.form("lab_ssh_form"):
+            host = st.text_input("Lab device management IP / hostname", placeholder="192.168.56.10")
+            port = st.number_input("SSH port", min_value=1, max_value=65535, value=22)
+            device_type = st.selectbox("Netmiko device type", ["cisco_ios", "cisco_xe"])
+            username = st.text_input("SSH username")
+            password = st.text_input("SSH password", type="password")
+            enable_secret = st.text_input("Enable secret (optional)", type="password")
+            submitted = st.form_submit_button("Connect and collect config", type="primary", use_container_width=True)
+        if submitted:
+            if not host.strip() or not username or not password:
+                st.error("Enter host, username, and password.")
+            else:
+                try:
+                    from netmiko import ConnectHandler
+                    with st.spinner("Connecting to lab device and collecting read-only output..."):
+                        device = {"device_type": device_type, "host": host.strip(), "port": int(port), "username": username, "password": password, "timeout": 15, "conn_timeout": 10}
+                        if enable_secret:
+                            device["secret"] = enable_secret
+                        with ConnectHandler(**device) as connection:
+                            if enable_secret:
+                                connection.enable()
+                            version = connection.send_command("show version", read_timeout=30)
+                            running = connection.send_command("show running-config", read_timeout=45)
+                        if not running.strip():
+                            raise RuntimeError("Device returned an empty running configuration.")
+                        safe_host = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in host.strip())[:80]
+                        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+                        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        collected_path = UPLOAD_DIR / f"ssh_{safe_host}_{stamp}.txt"
+                        collected_path.write_text(running.rstrip() + "\n", encoding="utf-8")
+                        version_path = UPLOAD_DIR / f"ssh_{safe_host}_{stamp}_version.txt"
+                        version_path.write_text(version.rstrip() + "\n", encoding="utf-8")
+                    st.success(f"Collected config saved as {collected_path.name}")
+                    st.code(version[:5000] or "No version output", language="text")
+                    if st.button("Audit collected configuration now", type="primary"):
+                        ok, message = run_audit(collected_path)
+                        st.success(message) if ok else st.error(message)
+                except ImportError:
+                    st.error("Netmiko is not installed in this environment. In the project venv run: python -m pip install netmiko")
+                except Exception as exc:
+                    st.error(f"SSH collection failed: {type(exc).__name__}: {exc}")
+
+# Multi-device page works independently of the single-device latest report.
+elif page == "Multi-Device Audit":
+    st.markdown("### Multi-device configuration audit")
+    st.caption("Run the offline auditor against several saved configurations in one batch.")
+    st.warning("This audits saved configuration files only; it does not connect live to Packet Tracer devices.")
+
+    available_configs = list_configs()
+    # Include all supported sample files, not just the dashboard's default sample.
+    if (ROOT / "samples").is_dir():
+        for candidate in sorted((ROOT / "samples").iterdir()):
+            if candidate.is_file() and candidate.suffix.lower() in ALLOWED_EXTENSIONS and candidate not in available_configs:
+                available_configs.append(candidate)
+    available_configs = list(dict.fromkeys(available_configs))
+    available_values = [str(p.resolve()) for p in available_configs]
+
+    if not available_values:
+        st.info("No saved configurations found. Upload a config from the sidebar first.")
+    else:
+        defaults = available_values[:min(3, len(available_values))]
+        selected_values = st.multiselect(
+            "Choose device configuration files",
+            options=available_values,
+            default=defaults,
+            format_func=lambda value: str(Path(value).resolve().relative_to(ROOT.resolve())),
+        )
+        out_base = ROOT / "reports" / "multi_device"
+        if st.button("▶ Run Multi-Device Audit", type="primary", disabled=not selected_values, use_container_width=True):
+            if not MULTI_AUDITOR.is_file():
+                st.error("Multi-device auditor not found at src/multi_device_audit.py")
+            else:
+                # Enforce project-local paths before passing them to the runner.
+                safe_paths = []
+                for value in selected_values:
+                    candidate = Path(value).resolve()
+                    try:
+                        candidate.relative_to(ROOT.resolve())
+                    except ValueError:
+                        st.error("For safety, select configuration files inside the NetSecureOps project.")
+                        safe_paths = []
+                        break
+                    safe_paths.append(str(candidate))
+                if safe_paths:
+                    with st.spinner("Auditing selected device configurations..."):
+                        try:
+                            proc = subprocess.run(
+                                [sys.executable, str(MULTI_AUDITOR), *safe_paths, "--out", str(out_base)],
+                                cwd=str(ROOT), capture_output=True, text=True, timeout=180,
+                            )
+                            if proc.stdout:
+                                st.code(proc.stdout, language="text")
+                            if proc.returncode == 0:
+                                st.success("Multi-device audit completed.")
+                            else:
+                                st.error(proc.stderr.strip() or "Multi-device audit failed; see output above.")
+                        except (OSError, subprocess.TimeoutExpired) as exc:
+                            st.error(f"Could not run multi-device audit: {exc}")
+
+    st.markdown("### Latest multi-device audit summary")
+    runs = sorted(out_base.glob("run_*/multi_device_summary.json"), key=lambda p: p.stat().st_mtime, reverse=True) if out_base.is_dir() else []
+    if runs:
+        latest_path = runs[0]
+        try:
+            summary = json.loads(latest_path.read_text(encoding="utf-8"))
+            st.caption(f"Report folder: {latest_path.parent.relative_to(ROOT)}")
+            a, b, c, d = st.columns(4)
+            a.metric("Devices requested", summary.get("devices_requested", 0))
+            b.metric("Successful", summary.get("devices_successful", 0))
+            c.metric("Failed", summary.get("devices_failed", 0))
+            d.metric("Highest-risk device", summary.get("highest_risk_device") or "N/A")
+            rows = []
+            for device in summary.get("devices", []):
+                counts = device.get("severity_counts", {})
+                rows.append({
+                    "Device": device.get("device", "Unknown"),
+                    "Status": device.get("status", "Unknown"),
+                    "Risk score": device.get("risk_score", "—"),
+                    "Risk label": device.get("risk_label", "—"),
+                    "Findings": device.get("findings_count", "—"),
+                    "Critical": counts.get("Critical", 0),
+                    "High": counts.get("High", 0),
+                    "Medium": counts.get("Medium", 0),
+                    "Low": counts.get("Low", 0),
+                })
+            if rows:
+                st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+            st.download_button("Download multi-device JSON", data=json.dumps(summary, indent=2), file_name="multi_device_summary.json", mime="application/json")
+            csv_path = latest_path.parent / "multi_device_summary.csv"
+            if csv_path.is_file():
+                st.download_button("Download multi-device CSV", data=csv_path.read_bytes(), file_name="multi_device_summary.csv", mime="text/csv")
+        except (OSError, json.JSONDecodeError) as exc:
+            st.error(f"Could not read multi-device summary: {exc}")
+    else:
+        st.info("No multi-device audit summary found yet. Select configurations above and run the audit.")
+    st.stop()
+
+if page == "Audit Comparison":
+    st.markdown("### Audit Comparison")
+    st.caption("Compare two saved static-audit reports. A lower heuristic score is not proof that a network is secure.")
+
+    try:
+        from src.compare_audits import load_report, compare_reports
+    except ModuleNotFoundError:
+        from compare_audits import load_report, compare_reports
+
+    candidates = []
+    if REPORT.is_file():
+        candidates.append(REPORT)
+    if HISTORY_DIR.is_dir():
+        candidates.extend(HISTORY_DIR.glob("audit_*/audit_report.json"))
+    reports_dir = ROOT / "reports"
+    if reports_dir.is_dir():
+        candidates.extend(reports_dir.glob("**/audit_report.json"))
+
+    # Keep only unique, existing JSON audit reports.
+    unique = {}
+    for candidate in candidates:
+        try:
+            resolved_path = candidate.resolve()
+            if resolved_path.is_file():
+                unique[str(resolved_path)] = resolved_path
+        except OSError:
+            continue
+    report_paths = sorted(unique.values(), key=lambda p: p.stat().st_mtime, reverse=True)
+
+    if len(report_paths) < 2:
+        st.warning("At least two saved audit_report.json files are needed. Run another audit or create a second report first.")
+        st.stop()
+
+    def report_label(report_path):
+        try:
+            data = json.loads(report_path.read_text(encoding="utf-8"))
+            score = data.get("risk_score", "?")
+            source_name = data.get("source_config") or data.get("config") or "source not recorded"
+            return f"{report_path.relative_to(ROOT)} | score: {score} | {source_name}"
+        except (OSError, json.JSONDecodeError, ValueError):
+            return str(report_path.relative_to(ROOT))
+
+    labels = {report_label(p): p for p in report_paths}
+    options = list(labels.keys())
+
+    left, right = st.columns(2)
+    with left:
+        before_label = st.selectbox("Before audit report", options, index=min(1, len(options) - 1), key="comparison_before")
+    with right:
+        after_label = st.selectbox("After audit report", options, index=0, key="comparison_after")
+
+    if before_label == after_label:
+        st.warning("Choose two different report files to compare.")
+        st.stop()
+
+    if st.button("Compare audit reports", type="primary", use_container_width=True):
+        try:
+            before_report = load_report(labels[before_label])
+            after_report = load_report(labels[after_label])
+            result = compare_reports(before_report, after_report)
+            st.session_state["audit_comparison_result"] = result
+            st.session_state["audit_comparison_before"] = before_label
+            st.session_state["audit_comparison_after"] = after_label
+        except (ValueError, TypeError, KeyError, OSError) as exc:
+            st.error(f"Could not compare these reports: {exc}")
+            st.stop()
+
+    result = st.session_state.get("audit_comparison_result")
+    if not result:
+        st.info("Select the before and after reports, then click Compare audit reports.")
+        st.stop()
+
+    if (st.session_state.get("audit_comparison_before") != before_label
+            or st.session_state.get("audit_comparison_after") != after_label):
+        st.info("The selected reports changed. Click Compare audit reports to refresh the results.")
+        st.stop()
+
+    status = result["status"]
+    delta = result["risk_score_delta"]
+    st.markdown(f"#### Result: {status}")
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Before risk score", f'{result["before_risk_score"]}/100')
+    m2.metric("After risk score", f'{result["after_risk_score"]}/100', delta=f"{delta:+d} points")
+    m3.metric("Resolved findings", result["resolved_findings_count"])
+    m4.metric("New findings", result["new_findings_count"])
+
+    st.metric("Unchanged findings", result["unchanged_findings_count"])
+    if result["before_duplicate_identity_count"] or result["after_duplicate_identity_count"]:
+        st.warning(
+            "Duplicate finding identities detected: "
+            f'before={result["before_duplicate_identity_count"]}, '
+            f'after={result["after_duplicate_identity_count"]}. '
+            "Review the report because duplicate records cannot be uniquely matched."
+        )
+
+    tabs = st.tabs(["Resolved", "New findings", "Unchanged"])
+    groups = [
+        ("resolved_findings", "Resolved", tabs[0]),
+        ("new_findings", "New", tabs[1]),
+        ("unchanged_findings", "Unchanged", tabs[2]),
+    ]
+    columns = ["rule_id", "title", "severity", "target", "evidence", "recommendation"]
+    for key, label, tab in groups:
+        with tab:
+            items = result[key]
+            st.caption(f"{len(items)} {label.lower()} finding(s)")
+            if items:
+                rows = []
+                for item in items:
+                    rows.append({
+                        "rule_id": item.get("rule_id", ""),
+                        "title": item.get("title", ""),
+                        "severity": item.get("severity", "Unknown"),
+                        "target": item.get("target") or item.get("interface", ""),
+                        "evidence": item.get("evidence", ""),
+                        "recommendation": item.get("recommendation", ""),
+                    })
+                st.dataframe(pd.DataFrame(rows, columns=columns), hide_index=True, use_container_width=True)
+            else:
+                st.info(f"No {label.lower()} findings in this comparison.")
+
+    st.markdown("#### Severity counts")
+    severity_rows = []
+    before_counts = result["before_severity_counts"]
+    after_counts = result["after_severity_counts"]
+    for severity in sorted(set(before_counts) | set(after_counts)):
+        severity_rows.append({
+            "Severity": severity,
+            "Before": before_counts.get(severity, 0),
+            "After": after_counts.get(severity, 0),
+        })
+    if severity_rows:
+        st.dataframe(pd.DataFrame(severity_rows), hide_index=True, use_container_width=True)
+
+    import csv
+    import io
+
+    csv_buffer = io.StringIO()
+    writer = csv.DictWriter(
+        csv_buffer,
+        fieldnames=["status", "rule_id", "title", "severity", "target", "evidence", "recommendation"],
+    )
+    writer.writeheader()
+    for key, label in [
+        ("resolved_findings", "Resolved"),
+        ("new_findings", "New"),
+        ("unchanged_findings", "Unchanged"),
+    ]:
+        for item in result[key]:
+            writer.writerow({
+                "status": label,
+                "rule_id": item.get("rule_id", ""),
+                "title": item.get("title", ""),
+                "severity": item.get("severity", ""),
+                "target": item.get("target") or item.get("interface", ""),
+                "evidence": item.get("evidence", ""),
+                "recommendation": item.get("recommendation", ""),
+            })
+
+    dl1, dl2 = st.columns(2)
+    with dl1:
+        st.download_button(
+            "Download comparison JSON",
+            data=json.dumps(result, indent=2),
+            file_name="netsecureops_comparison.json",
+            mime="application/json",
+            use_container_width=True,
+        )
+    with dl2:
+        st.download_button(
+            "Download comparison CSV",
+            data=csv_buffer.getvalue(),
+            file_name="netsecureops_comparison.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+
+    with st.expander("Comparison methodology and limitations"):
+        st.write("Finding identity uses rule ID, target/interface, and evidence/title.")
+        st.write("The risk score is heuristic, not a validated enterprise risk model.")
+        st.write("Static configuration checks do not prove connectivity, service state, or real-world security.")
+        st.write("Validate changes in an authorised isolated lab before using them on a real device.")
+    st.stop()
+
+
+# ---------- Audit Analytics ----------
+if page == "Audit Analytics":
+    st.title("📈 Audit History Analytics")
+    st.caption("Historical trends from saved offline configuration audits")
+
+    history_files = sorted(
+        HISTORY_DIR.glob("audit_*/audit_report.json"),
+        key=lambda p: p.stat().st_mtime,
+    ) if HISTORY_DIR.is_dir() else []
+
+    records = []
+    report_by_label = {}
+
+    for report_path in history_files:
+        try:
+            item = json.loads(report_path.read_text(encoding="utf-8"))
+            if not isinstance(item, dict):
+                continue
+
+            score = item.get("risk_score")
+            if isinstance(score, bool) or not isinstance(score, (int, float)):
+                continue
+
+            timestamp = item.get("audit_time_utc", "")
+            try:
+                parsed_time = pd.to_datetime(timestamp, utc=True, errors="coerce")
+            except Exception:
+                parsed_time = pd.NaT
+
+            findings = item.get("findings", [])
+            if not isinstance(findings, list):
+                findings = []
+
+            severity = item.get("severity_counts", {})
+            if not isinstance(severity, dict):
+                severity = {}
+
+            row = {
+                "audit_id": item.get("audit_id", report_path.parent.name),
+                "audit_time_utc": parsed_time,
+                "source_config": item.get("source_config", "Unknown"),
+                "risk_score": float(score),
+                "risk_label": item.get("risk_label", "Unknown"),
+                "finding_count": len(findings),
+                "Critical": int(severity.get("Critical", 0) or 0),
+                "High": int(severity.get("High", 0) or 0),
+                "Medium": int(severity.get("Medium", 0) or 0),
+                "Low": int(severity.get("Low", 0) or 0),
+                "_path": str(report_path),
+            }
+            records.append(row)
+            label = (
+                f"{row['audit_time_utc']} | {row['source_config']} | "
+                f"Risk {row['risk_score']:g} | {row['audit_id']}"
+            )
+            report_by_label[label] = (report_path, item)
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            continue
+
+    if not records:
+        st.info("No valid historical audit reports found. Run an audit first.")
+        st.stop()
+
+    history_df = pd.DataFrame(records)
+    history_df = history_df.sort_values(
+        "audit_time_utc", na_position="last"
+    ).reset_index(drop=True)
+
+    latest = history_df.iloc[-1]
+    first = history_df.iloc[0]
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Saved audits", len(history_df))
+    col2.metric("Latest risk score", f"{latest['risk_score']:g}/100")
+    col3.metric("Latest findings", int(latest["finding_count"]))
+    col4.metric(
+        "Risk change",
+        f"{latest['risk_score'] - first['risk_score']:+g}",
+        help="Latest minus earliest recorded risk score. Negative means lower heuristic score.",
+    )
+
+    st.markdown("### Risk score over time")
+    chart_df = history_df.dropna(subset=["audit_time_utc"]).set_index("audit_time_utc")
+    if not chart_df.empty:
+        st.line_chart(chart_df[["risk_score"]], y="risk_score")
+        st.caption(
+            "Risk scores are heuristic outputs from saved configuration audits; "
+            "they do not prove that a live network is secure."
+        )
+    else:
+        st.warning("Saved reports do not contain usable audit timestamps.")
+
+    st.markdown("### Finding severity over time")
+    severity_columns = ["Critical", "High", "Medium", "Low"]
+    available_severity = [
+        column for column in severity_columns
+        if column in history_df.columns and history_df[column].sum() > 0
+    ]
+    if available_severity and not chart_df.empty:
+        st.line_chart(chart_df[available_severity])
+    else:
+        st.info(
+            "No severity-count data is available for this chart. "
+            "Check whether reports contain severity_counts."
+        )
+
+    st.markdown("### Historical audit records")
+    display_df = history_df.drop(columns=["_path"]).copy()
+    display_df["audit_time_utc"] = display_df["audit_time_utc"].astype(str)
+    st.dataframe(display_df, hide_index=True, use_container_width=True)
+
+    st.download_button(
+        "Download audit history CSV",
+        data=display_df.to_csv(index=False),
+        file_name="netsecureops_audit_history.csv",
+        mime="text/csv",
+    )
+
+    st.markdown("### Inspect a saved audit")
+    labels = list(report_by_label.keys())
+    selected_label = st.selectbox("Select historical report", labels, index=len(labels) - 1)
+    selected_path, selected_report = report_by_label[selected_label]
+    st.caption(f"Report file: {selected_path}")
+    st.json(selected_report)
+
+    st.download_button(
+        "Download selected audit JSON",
+        data=json.dumps(selected_report, indent=2),
+        file_name=f"{selected_report.get('audit_id', 'audit_report')}.json",
+        mime="application/json",
+    )
+    st.stop()
+
+
+
+# ---------- Security Compliance ----------
+if page == "Security Compliance":
+    import pandas as pd
+    import streamlit as st
+    from compliance import assess_compliance, write_compliance_outputs
+
+    st.title("Security Compliance")
+    st.caption("Project-defined control mapping for NetSecureOps")
+
+    st.warning(
+        "This is not an official compliance certification. "
+        "Missing findings do not count as proof that a control passed."
+    )
+
+    if report is None:
+        st.info(
+            "No current audit report is loaded. Select a configuration "
+            "and run a security audit from the sidebar first."
+        )
+        st.stop()
+
+    try:
+        result = assess_compliance(report)
+    except (ValueError, TypeError, KeyError) as exc:
+        st.error(f"Could not assess this audit report: {exc}")
+        st.stop()
+
+    summary = result["summary"]
+    metric1, metric2, metric3, metric4 = st.columns(4)
+    metric1.metric("Total controls", summary["total_controls"])
+    metric2.metric("Failed", summary["fail"])
+    metric3.metric("Passed", summary["pass"])
+    metric4.metric("Not assessed", summary["not_assessed"])
+
+    st.progress(
+        summary["assessment_coverage_percent"] / 100,
+        text=f"Assessment coverage: {summary['assessment_coverage_percent']:.2f}%"
+    )
+
+    pass_rate = summary["pass_rate_percent_of_assessed"]
+    if pass_rate is None:
+        st.caption("Pass rate: unavailable because no controls have been assessed.")
+    else:
+        st.caption(f"Pass rate among assessed controls: {pass_rate:.2f}%")
+
+    st.markdown("### Control register")
+    controls_df = pd.DataFrame(result["controls"])
+    status_filter = st.selectbox(
+        "Filter by status",
+        ["All", "FAIL", "PASS", "NOT ASSESSED"],
+    )
+
+    visible_df = controls_df.copy()
+    if status_filter != "All":
+        visible_df = visible_df[visible_df["status"] == status_filter]
+
+    display_columns = [
+        "control_id", "domain", "title", "status", "rule_ids", "description"
+    ]
+    visible_df = visible_df[display_columns].copy()
+    visible_df["rule_ids"] = visible_df["rule_ids"].apply(
+        lambda values: ", ".join(values)
+    )
+    st.dataframe(visible_df, hide_index=True, use_container_width=True)
+
+    st.markdown("### Evidence and recommendations")
+    for control in result["controls"]:
+        with st.expander(
+            f'{control["status"]} | {control["control_id"]} — {control["title"]}'
+        ):
+            st.write(control["description"])
+            st.write("Mapped rules:", ", ".join(control["rule_ids"]))
+
+            if control["evidence"]:
+                for item in control["evidence"]:
+                    st.markdown(f'**{item["rule_id"]} — {item["severity"]}**')
+                    st.write(item["title"])
+                    st.write("Evidence:", item["evidence"] or "No evidence text recorded.")
+                    st.write(
+                        "Recommendation:",
+                        item["recommendation"] or "No recommendation recorded."
+                    )
+            elif control["status"] == "PASS":
+                st.success("Explicit pass evidence was supplied for all mapped rules.")
+            else:
+                st.info(
+                    "No mapped finding is recorded, but this does not establish "
+                    "that the control passed."
+                )
+
+    st.markdown("### Export assessment")
+    st.caption(
+        "Exports contain the current loaded audit report's assessment. "
+        "PASS remains unavailable unless explicit pass evidence is supplied."
+    )
+
+    try:
+        json_path, csv_path = write_compliance_outputs(
+            result, ROOT / "reports" / "compliance"
+        )
+        download1, download2 = st.columns(2)
+        with download1:
+            st.download_button(
+                "Download compliance JSON",
+                data=json_path.read_bytes(),
+                file_name="netsecureops_compliance_report.json",
+                mime="application/json",
+                use_container_width=True,
+            )
+        with download2:
+            st.download_button(
+                "Download controls CSV",
+                data=csv_path.read_bytes(),
+                file_name="netsecureops_compliance_controls.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
+    except OSError as exc:
+        st.error(f"Could not create compliance exports: {exc}")
+
+    with st.expander("Assessment limitations"):
+        for limitation in result["limitations"]:
+            st.write(f"- {limitation}")
+
+    st.stop()
+
+
+if report is None:
+    st.info("No single-device audit report is available yet. Select or upload a configuration, then run an audit.")
+    st.stop()
+
+findings = report.get("findings", [])
+if not isinstance(findings, list):
+    findings = []
+df = pd.DataFrame(findings)
+
+expected_columns = [
+    "rule_id", "severity", "title", "description", "evidence", "recommendation",
+]
+for col in expected_columns:
+    if col not in df.columns:
+        df[col] = ""
+
+df["severity"] = df["severity"].fillna("Unknown").astype(str).str.title()
+df["rule_id"] = df["rule_id"].fillna("N/A").astype(str)
+
+try:
+    score = max(0, min(100, int(report.get("risk_score", 0))))
+except (TypeError, ValueError):
+    score = 0
+
+risk_hex, risk_name = risk_color(score)
+total = len(df)
+counts = df["severity"].value_counts()
+critical = int(counts.get("Critical", 0))
+high = int(counts.get("High", 0))
+medium = int(counts.get("Medium", 0))
+low = int(counts.get("Low", 0))
+source_config = report.get("source_config", "Legacy/default report (source not recorded)")
+
+# ---------- Overview ----------
+if page == "Overview":
+    st.markdown("### Security posture")
+    st.caption(f"Report time: {report.get('audit_time_utc', 'Not recorded')} UTC")
+    st.caption(f"Audited configuration: {source_config}")
+
+    a, b, c, d = st.columns(4)
+    with a:
+        card("Risk score", f"{score}/100", "Heuristic score from auditor", risk_hex)
+    with b:
+        card("Total findings", total, "From the current audit", "#38BDF8")
+    with c:
+        card("Critical + High", critical + high, "Prioritise remediation", "#F97316")
+    with d:
+        card("Configuration", "LOADED", Path(source_config).name, "#22C55E")
+
+    st.markdown(
+        f'<span class="ns-status" style="background:{risk_hex}22;'
+        f'color:{risk_hex};border:1px solid {risk_hex}66">'
+        f'RISK STATUS: {risk_name}</span>',
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("### Findings analytics")
+    left, right = st.columns([1.15, 1])
+    order = ["Critical", "High", "Medium", "Low", "Info", "Informational", "Unknown"]
+
+    with left:
+        st.markdown('<div class="ns-section">', unsafe_allow_html=True)
+        st.markdown("#### Findings by severity")
+        chart_data = counts.reindex(order, fill_value=0)
+        chart_data = chart_data[chart_data > 0]
+        if not chart_data.empty:
+            st.bar_chart(chart_data, color="#38BDF8")
+        else:
+            st.success("No security findings in this report.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with right:
+        st.markdown('<div class="ns-section">', unsafe_allow_html=True)
+        st.markdown("#### Severity breakdown")
+        if total:
+            for label in order:
+                n = int(counts.get(label, 0))
+                if n == 0:
+                    continue
+                pct = n / total * 100
+                color = SEVERITY_COLORS.get(label, "#94A3B8")
+                st.markdown(
+                    f'<div style="display:flex;justify-content:space-between;'
+                    f'margin-top:12px"><span>{label}</span>'
+                    f'<b style="color:{color}">{n} · {pct:.0f}%</b></div>'
+                    f'<div style="height:8px;background:#263247;border-radius:8px;'
+                    f'margin-top:5px"><div style="width:{pct}%;height:8px;'
+                    f'background:{color};border-radius:8px"></div></div>',
+                    unsafe_allow_html=True,
+                )
+        else:
+            st.success("No findings to break down.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("### Priority findings")
+    priority = df[df["severity"].isin(["Critical", "High", "Medium"])]
+    if priority.empty:
+        st.success("No Critical, High or Medium findings are present.")
+    else:
+        st.dataframe(
+            priority[["rule_id", "severity", "title", "recommendation"]],
+            hide_index=True,
+            use_container_width=True,
+        )
+
+# ---------- Findings ----------
+elif page == "Security Findings":
+    st.markdown("### Security findings explorer")
+    st.caption("Filter findings and inspect the evidence from the current report.")
+
+    f1, f2 = st.columns([1, 2])
+    with f1:
+        selected_severities = st.multiselect(
+            "Severity",
+            options=sorted(df["severity"].unique().tolist()),
+            default=sorted(df["severity"].unique().tolist()),
+        )
+    with f2:
+        query = st.text_input("Search rules, evidence or recommendations")
+
+    filtered = df[df["severity"].isin(selected_severities)].copy()
+    searchable = ["rule_id", "title", "description", "evidence", "recommendation"]
+    if query:
+        mask = filtered[searchable].fillna("").astype(str).apply(
+            lambda col: col.str.contains(query, case=False, regex=False)
+        ).any(axis=1)
+        filtered = filtered[mask]
+
+    st.caption(f"Showing {len(filtered)} of {total} findings")
+    if filtered.empty:
+        st.info("No findings match the selected filters.")
+    else:
+        st.dataframe(
+            filtered[["rule_id", "severity", "title", "description"]],
+            hide_index=True,
+            use_container_width=True,
+        )
+        selected_idx = st.selectbox(
+            "Inspect a finding",
+            filtered.index.tolist(),
+            format_func=lambda i: (
+                f"{filtered.loc[i, 'rule_id']} — "
+                f"{filtered.loc[i, 'title'] or 'Untitled finding'}"
+            ),
+        )
+        finding = filtered.loc[selected_idx]
+        color = SEVERITY_COLORS.get(finding["severity"], "#94A3B8")
+
+        st.markdown('<div class="ns-section">', unsafe_allow_html=True)
+        st.markdown(
+            f'<span class="ns-status" style="background:{color}22;'
+            f'color:{color};border:1px solid {color}66">'
+            f'{finding["severity"].upper()}</span>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(f"#### {finding['rule_id']} — {finding['title']}")
+        st.markdown("**Description**")
+        st.write(finding["description"] or "No description recorded.")
+        st.markdown("**Configuration evidence**")
+        st.code(finding["evidence"] or "No evidence recorded.", language=None)
+        st.markdown("**Recommended remediation**")
+        st.write(finding["recommendation"] or "No recommendation recorded.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+# ---------- Local AI Security Analysis ----------
+elif page == "AI Security Analysis":
+    st.markdown("### Local AI Security Analysis")
+    st.caption(
+        "Uses Ollama on this machine to explain the current audit findings. "
+        "AI output is advisory; the deterministic audit remains the source of truth."
+    )
+
+    st.info(
+        "Review all suggestions before making changes. "
+        "This page does not apply configuration changes to network devices."
+    )
+
+    st.write(f"**Audit source:** {source_config}")
+    st.write(f"**Risk score:** {score}/100 ({risk_name})")
+    st.write(f"**Findings:** {total}")
+
+    if not findings:
+        st.warning("The selected report contains no findings to analyze.")
+    else:
+        if st.button("Run local AI analysis", type="primary"):
+            # Clear old output so a failed run cannot look like a fresh result.
+            st.session_state.pop("netsecureops_ai_analysis", None)
+            st.session_state.pop("netsecureops_ai_report_source", None)
+
+            with st.spinner("Ollama is analyzing the audit. This may take several minutes..."):
+                try:
+                    try:
+                        from src.ai_analyst import analyze_findings
+                    except ModuleNotFoundError:
+                        from ai_analyst import analyze_findings
+
+                    analysis = analyze_findings(report, timeout=300)
+                    st.session_state["netsecureops_ai_analysis"] = analysis
+                    st.session_state["netsecureops_ai_report_source"] = str(source_config)
+                except (RuntimeError, ValueError, OSError) as exc:
+                    st.error(f"AI analysis failed: {exc}")
+
+        saved_analysis = st.session_state.get("netsecureops_ai_analysis")
+        saved_source = st.session_state.get("netsecureops_ai_report_source")
+
+        if saved_analysis:
+            st.markdown("#### AI analysis")
+            st.caption(
+                "Generated locally. Check recommendations against the actual "
+                "configuration and your network policy."
+            )
+            st.markdown(saved_analysis)
+
+            st.download_button(
+                "Download AI analysis",
+                data=saved_analysis,
+                file_name="netsecureops_ai_analysis.txt",
+                mime="text/plain",
+            )
+        else:
+            st.caption("Select Run local AI analysis to generate the analysis.")
+
+# ---------- Reports ----------
+elif page == "Reports & Evidence":
+    st.markdown("### Reports & evidence")
+    st.caption("Export the results produced by the current audit.")
+
+    st.download_button(
+        "⬇ Download JSON report",
+        data=json.dumps(report, indent=2),
+        file_name="netsecureops_audit_report.json",
+        mime="application/json",
+        use_container_width=True,
+    )
+    st.download_button(
+        "⬇ Download findings CSV",
+        data=df.to_csv(index=False),
+        file_name="netsecureops_findings.csv",
+        mime="text/csv",
+        use_container_width=True,
+    )
+
+    st.markdown("### Audit metadata")
+    metadata = {
+        "Tool": report.get("tool", "NetSecureOps"),
+        "Version": report.get("version", "Unknown"),
+        "Audit time (UTC)": report.get("audit_time_utc", "Not recorded"),
+        "Audit ID": report.get("audit_id", "Not recorded"),
+        "Reported checks": report.get("checks_run", "Not recorded"),
+        "Risk score": score,
+        "Risk label from auditor": report.get("risk_label", "Unknown"),
+        "Source": source_config,
+    }
+    st.json(metadata)
+
+    st.markdown("### Current finding records")
+    st.dataframe(df, hide_index=True, use_container_width=True)
+
+    st.markdown("### Saved audit history")
+    if HISTORY_DIR.is_dir():
+        history_reports = sorted(
+            HISTORY_DIR.glob("audit_*/audit_report.json"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        if history_reports:
+            rows = []
+            for path in history_reports[:50]:
+                try:
+                    item = json.loads(path.read_text(encoding="utf-8"))
+                    rows.append({
+                        "audit_id": item.get("audit_id", path.parent.name),
+                        "source_config": item.get("source_config", "Unknown"),
+                        "audit_time_utc": item.get("audit_time_utc", "Unknown"),
+                        "risk_score": item.get("risk_score", "Unknown"),
+                        "findings": len(item.get("findings", [])),
+                    })
+                except (OSError, json.JSONDecodeError):
+                    continue
+            if rows:
+                st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+        else:
+            st.info("No saved audit history yet. Run an audit to create the first record.")
+    else:
+        st.info("No saved audit history yet.")
+
+# ---------- About ----------
+elif page == "About":
+    st.markdown("### About NetSecureOps")
+    st.write(
+        "NetSecureOps is a development-stage network configuration auditing "
+        "project. It analyses a saved configuration and presents the results for review."
+    )
+    st.markdown("#### Current capabilities")
+    st.write("- Offline configuration audit")
+    st.write("- Upload and select saved router/switch configurations")
+    st.write("- Severity-based findings and evidence")
+    st.write("- JSON and CSV report export")
+    st.write("- Saved audit history")
+    st.write("- Searchable findings")
+    st.markdown("#### Current limitations")
+    st.write("- This build audits saved configuration text, not live device telemetry.")
+    st.write("- Findings depend on the rules implemented in the auditor.")
+    st.write("- Risk scores are heuristic, not a validated enterprise risk model.")
+    st.write("- Remediation is advisory; this dashboard does not change device configurations.")
+    st.write("- AI analysis is not enabled in this build yet.")
+
+st.markdown("---")
+st.caption("NetSecureOps | Review every recommendation before changing network configurations.")
+

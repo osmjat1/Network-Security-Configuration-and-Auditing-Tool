@@ -1,0 +1,81 @@
+import unittest
+
+from src.ai_analyst import validate_ai_response
+
+
+class TestAIResponseValidation(unittest.TestCase):
+
+    def test_flags_disabling_port_security(self):
+        warnings = validate_ai_response(
+            "Disable port security on all access ports."
+        )
+        self.assertTrue(any("port security" in w.lower() for w in warnings))
+
+    def test_flags_telnet_claimed_as_secure(self):
+        warnings = validate_ai_response(
+            "Telnet is secure for remote administration."
+        )
+        self.assertTrue(any("telnet" in w.lower() for w in warnings))
+
+    def test_flags_unverified_live_device_claim(self):
+        warnings = validate_ai_response(
+            "I verified this successfully on the live device."
+        )
+        self.assertTrue(any("live device" in w.lower() for w in warnings))
+
+    def test_discloses_limits_when_no_known_phrase_detected(self):
+        warnings = validate_ai_response(
+            "Review the configuration and verify SSH access."
+        )
+        self.assertTrue(warnings)
+        self.assertTrue(
+            any("does not prove" in w.lower() for w in warnings)
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+class TestFindingPrioritisation(unittest.TestCase):
+
+    def test_critical_findings_rank_above_low_findings(self):
+        from src.ai_analyst import prioritise_findings
+
+        findings = [
+            {"rule_id": "LOW-001", "severity": "Low", "title": "Low issue"},
+            {"rule_id": "CRIT-001", "severity": "Critical", "title": "Critical issue"},
+            {"rule_id": "HIGH-001", "severity": "High", "title": "High issue"},
+        ]
+
+        ranked = prioritise_findings(findings)
+        self.assertEqual(
+            [item["rule_id"] for item in ranked],
+            ["CRIT-001", "HIGH-001", "LOW-001"],
+        )
+
+    def test_prioritisation_does_not_modify_original_findings(self):
+        from src.ai_analyst import prioritise_findings
+
+        findings = [
+            {"rule_id": "LOW-001", "severity": "Low"},
+            {"rule_id": "HIGH-001", "severity": "High"},
+        ]
+        original = [item.copy() for item in findings]
+
+        prioritise_findings(findings)
+        self.assertEqual(findings, original)
+
+    def test_unknown_severity_is_ranked_last(self):
+        from src.ai_analyst import prioritise_findings
+
+        findings = [
+            {"rule_id": "UNK-001", "severity": "Unknown"},
+            {"rule_id": "MED-001", "severity": "Medium"},
+        ]
+
+        ranked = prioritise_findings(findings)
+        self.assertEqual(
+            [item["rule_id"] for item in ranked],
+            ["MED-001", "UNK-001"],
+        )
